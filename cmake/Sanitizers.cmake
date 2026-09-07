@@ -1,0 +1,17 @@
+function(ironpulse_enable_sanitizers target_name)
+    if(IRONPULSE_ENABLE_ASAN AND IRONPULSE_ENABLE_TSAN)
+        message(FATAL_ERROR "ASan and TSan cannot be enabled at the same time.")
+    endif()
+
+    if(IRONPULSE_ENABLE_ASAN)
+        message(STATUS "[ironpulse] AddressSanitizer + UndefinedBehaviorSanitizer enabled")
+        target_compile_options(${target_name} INTERFACE -fsanitize=address,undefined -fno-omit-frame-pointer)
+        target_link_options(${target_name} INTERFACE -fsanitize=address,undefined)
+    endif()
+
+    if(IRONPULSE_ENABLE_TSAN)
+        message(STATUS "[ironpulse] ThreadSanitizer enabled")
+        target_compile_options(${target_name} INTERFACE -fsanitize=thread -fno-omit-frame-pointer)
+        target_link_options(${target_name} INTERFACE -fsanitize=thread)
+    endif()
+endfunction()
