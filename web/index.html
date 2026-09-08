@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="ru">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ironpulse from Sergeev Anton — Industrial Telemetry</title>
+    <link rel="stylesheet" href="css/dashboard.css" />
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <img src="assets/logo.svg" alt="" width="28" height="28" />
+            <span>Ironpulse <span class="brand-author">from Sergeev Anton</span></span>
+        </div>
+        <div class="connection-status" id="connection-status">
+            <span class="dot" id="connection-dot"></span>
+            <span id="connection-label">Подключение...</span>
+        </div>
+    </header>
+
+    <section class="about">
+        <p>
+            <strong>Ironpulse</strong> — движок промышленной телеметрии и обнаружения аномалий
+            в реальном времени. Опрашивает датчики по протоколу Modbus TCP, сохраняет показания
+            как временные ряды (в памяти и на диске через write-ahead log), обнаруживает
+            аномалии с помощью нескольких статистических стратегий (z-score, EWMA, CUSUM) с
+            голосованием по кворуму, и отдаёт результат через REST + WebSocket API на этот
+            дашборд в реальном времени.
+        </p>
+        <p class="about-stack">
+            <strong>Технологии:</strong> C++20 (ядро, Modbus-клиент, хранилище, аналитика, REST
+            и WebSocket API), JavaScript (дашборд), Python (симулятор Modbus-устройств для демо),
+            Docker/Docker Compose и nginx (развёртывание).
+        </p>
+    </section>
+
+    <main class="layout">
+        <section class="panel devices-panel">
+            <h2>Устройства</h2>
+            <ul id="device-list" class="device-list"></ul>
+        </section>
+
+        <section class="panel charts-panel">
+            <h2>Показания в реальном времени</h2>
+            <div id="charts-container" class="charts-container"></div>
+        </section>
+
+        <section class="panel alerts-panel">
+            <h2>Активные алерты</h2>
+            <ul id="alerts-list" class="alerts-list">
+                <li class="empty-state">Аномалий не обнаружено</li>
+            </ul>
+        </section>
+    </main>
+
+    <!-- Bundled locally (web/js/vendor/) rather than loaded from a CDN:
+         the dashboard has to work in restricted/offline network
+         environments (e.g. certain VDS or corporate networks where
+         cdnjs.cloudflare.com is blocked or unreachable), and a monitoring
+         tool that silently loses its charts because a third-party CDN was
+         unreachable is not acceptable for a production deployment. -->
+    <script src="js/vendor/chart.umd.min.js"></script>
+    <script src="js/api-client.js"></script>
+    <script src="js/charts.js"></script>
+    <script src="js/alerts-panel.js"></script>
+    <script src="js/app-init.js"></script>
+    <script src="js/ws-client.js"></script>
+</body>
+</html>
