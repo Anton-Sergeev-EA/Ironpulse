@@ -1,0 +1,28 @@
+{
+  "app_name": "ironpulse",
+  "log_level": "info",
+  "log_file": "",
+  "http_port": 8080,
+  "ws_port": 8081,
+  "worker_threads": 4,
+  "web_root": "web",
+  "data_dir": "/app/data",
+  "persistence_enabled": true,
+  "retention_hours": 168,
+  "devices": [
+    {
+      "id": "transformer_temp_01",
+      "host": "simulator",
+      "port": 5020,
+      "unit_id": 1,
+      "poll_interval_ms": 1000
+    },
+    {
+      "id": "bearing_vibration_02",
+      "host": "simulator",
+      "port": 5020,
+      "unit_id": 2,
+      "poll_interval_ms": 500
+    }
+  ]
+}

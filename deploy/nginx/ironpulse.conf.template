@@ -1,0 +1,51 @@
+# Reverse proxy for ironpulse.
+#
+# This is an nginx *template*: the official nginx:1.27 image auto-renders
+# any file mounted under /etc/nginx/templates/*.template through envsubst
+# on container start, substituting values from the container's own
+# environment (see docker-compose.yml, service `nginx`, `environment:`).
+# That means the upstream ports below always match whatever HTTP_PORT/
+# WS_PORT the stack was started with — no manual editing needed, and no
+# way for this file to drift out of sync with the ports ironpulse is
+# actually listening on.
+#
+# For production TLS termination, put certbot/TLS in front of this (see
+# the commented block at the bottom) or run behind an existing
+# TLS-terminating load balancer.
+
+upstream ironpulse_backend {
+    server ironpulse:${IRONPULSE_HTTP_PORT};
+}
+
+upstream ironpulse_ws {
+    server ironpulse:${IRONPULSE_WS_PORT};
+}
+
+server {
+    listen 80;
+    server_name _;
+
+    # REST API + static dashboard files
+    location / {
+        proxy_pass http://ironpulse_backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # WebSocket endpoint for live telemetry push
+    location /ws/ {
+        proxy_pass http://ironpulse_ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_read_timeout 3600s;
+    }
+
+    # --- TLS (uncomment once you have a certificate, e.g. via certbot) ---
+    # listen 443 ssl;
+    # ssl_certificate     /etc/letsencrypt/live/YOUR_DOMAIN/fullchain.pem;
+    # ssl_certificate_key /etc/letsencrypt/live/YOUR_DOMAIN/privkey.pem;
+}
