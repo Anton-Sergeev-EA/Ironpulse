@@ -1,0 +1,17 @@
+# Production override for deployment behind an EXISTING host-level nginx
+# (as opposed to the bundled Docker nginx used for local demos).
+#
+# The port binding address is controlled by IRONPULSE_BIND_HOST in .env
+# (see .env.example) directly in docker-compose.yml — set it to
+# 127.0.0.1 for a production deployment so ironpulse is reachable only
+# from the host's own nginx, not directly from the internet. This
+# override file's only remaining job is to disable the Docker-bundled
+# nginx service, since the host's own nginx handles TLS + routing.
+#
+# Usage:
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+services:
+  nginx:
+    profiles:
+      - disabled-in-production

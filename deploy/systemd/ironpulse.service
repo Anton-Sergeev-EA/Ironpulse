@@ -1,0 +1,32 @@
+[Unit]
+Description=Ironpulse industrial telemetry & anomaly detection engine
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=ironpulse
+Group=ironpulse
+WorkingDirectory=/opt/ironpulse
+ExecStart=/opt/ironpulse/bin/ironpulse /opt/ironpulse/config.json
+Restart=on-failure
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+
+# Optional: override any config.json value without editing it (same
+# IRONPULSE_* variables used in the Docker Compose setup — see
+# docs/adr/0003-env-driven-config.md). Uncomment and adjust as needed:
+# Environment=IRONPULSE_HTTP_PORT=8080
+# Environment=IRONPULSE_WS_PORT=8081
+# Environment=IRONPULSE_LOG_LEVEL=info
+
+# Hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/ironpulse/data
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
