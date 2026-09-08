@@ -1,0 +1,145 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.compiler }} / ${{ matrix.build_type }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        build_type: [debug]
+        include:
+          - compiler: gcc
+            cc: gcc-13
+            cxx: g++-13
+          - compiler: clang
+            cc: clang-18
+            cxx: clang++-18
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build ${{ matrix.cc }} ${{ matrix.cxx }}
+
+      - name: Configure
+        env:
+          CC: ${{ matrix.cc }}
+          CXX: ${{ matrix.cxx }}
+        run: cmake --preset debug
+
+      - name: Build
+        run: cmake --build --preset debug -j "$(nproc)"
+
+      - name: Test
+        run: ctest --preset debug --output-on-failure
+
+  sanitizers:
+    name: ASan + UBSan
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: cmake --preset asan
+
+      - name: Build
+        run: cmake --build --preset asan -j "$(nproc)"
+
+      - name: Test under ASan/UBSan
+        run: ctest --preset asan --output-on-failure
+
+  tsan:
+    name: ThreadSanitizer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+
+      - name: Configure
+        run: cmake --preset tsan
+
+      - name: Build
+        run: cmake --build --preset tsan -j "$(nproc)"
+
+      - name: Test under ThreadSanitizer
+        run: ctest --build-config tsan --test-dir build/tsan --output-on-failure
+
+  lint:
+    name: clang-format check
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install clang-format
+        run: sudo apt-get update && sudo apt-get install -y clang-format-18
+      - name: Check formatting
+        run: |
+          find include src tests -name '*.cpp' -o -name '*.hpp' | \
+            xargs clang-format-18 --dry-run --Werror
+
+  docker-build:
+    name: Docker image build
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build ironpulse image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/docker/Dockerfile
+          push: false
+          tags: ironpulse:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Build simulator image
+        uses: docker/build-push-action@v6
+        with:
+          context: tools/modbus_simulator
+          file: tools/modbus_simulator/Dockerfile
+          push: false
+          tags: ironpulse-simulator:ci
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Full stack smoke test via docker compose
+        working-directory: deploy/docker
+        run: |
+          cp .env.example .env
+          docker compose up --build -d
+          echo "Waiting for services to report healthy..."
+          for i in $(seq 1 30); do
+            status=$(docker inspect --format='{{.State.Health.Status}}' ironpulse-app 2>/dev/null || echo "starting")
+            if [ "$status" = "healthy" ]; then
+              echo "ironpulse-app is healthy"
+              break
+            fi
+            sleep 2
+          done
+          docker inspect --format='{{.State.Health.Status}}' ironpulse-app
+          curl -sf http://localhost:8080/healthz
+          curl -sf http://localhost:8080/api/v1/devices
+          docker compose logs
+          docker compose down -v
