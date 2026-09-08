@@ -1,0 +1,5 @@
+# Pinned exactly: pymodbus 3.8+ reworked the datastore API
+# (ModbusSlaveContext -> ModbusDeviceContext, ModbusServerContext(slaves=...)
+# -> (devices=...)), which is incompatible with the code below. Bump this
+# deliberately and update simulator.py if you need a newer pymodbus.
+pymodbus==3.6.9
