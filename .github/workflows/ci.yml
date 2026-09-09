@@ -81,7 +81,7 @@ jobs:
         run: cmake --build --preset tsan -j "$(nproc)"
 
       - name: Test under ThreadSanitizer
-        run: ctest --build-config tsan --test-dir build/tsan --output-on-failure
+        run: ctest --preset tsan --output-on-failure
 
   lint:
     name: clang-format check
