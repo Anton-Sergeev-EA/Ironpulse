@@ -26,6 +26,7 @@ const WsClient = {
     reconnectDelayMs: 2000,
     sameOriginAttemptTimeoutMs: 1500,
     resolvedUrl: null, // cached once a connection strategy succeeds
+    statusKey: "connection.connecting",
 
     connect() {
         if (this.resolvedUrl) {
@@ -124,7 +125,9 @@ const WsClient = {
         const dot = document.getElementById("connection-dot");
         const label = document.getElementById("connection-label");
         dot.className = `dot ${online ? "online" : "offline"}`;
-        label.textContent = online ? "Подключено" : "Переподключение...";
+        this.statusKey = online ? "connection.online" : "connection.reconnecting";
+        label.dataset.i18n = this.statusKey;
+        label.textContent = I18n.t(this.statusKey);
     },
 };
 

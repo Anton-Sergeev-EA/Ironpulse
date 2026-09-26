@@ -4,6 +4,17 @@ const ChartsPanel = {
     charts: new Map(),
     maxPoints: 120,
 
+    init() {
+        // X-axis labels are formatted times; re-format them in the new
+        // locale when the viewer switches language.
+        I18n.onChange(() => {
+            for (const chart of this.charts.values()) {
+                chart.data.labels = chart.$timestamps.map((ts) => I18n.formatTime(ts));
+                chart.update("none");
+            }
+        });
+    },
+
     ensureChart(sensorId) {
         if (this.charts.has(sensorId)) {
             return this.charts.get(sensorId);
@@ -43,18 +54,19 @@ const ChartsPanel = {
             },
         });
 
+        chart.$timestamps = [];
         this.charts.set(sensorId, chart);
         return chart;
     },
 
     pushPoint(sensorId, timestamp, value) {
         const chart = this.ensureChart(sensorId);
-        const label = new Date(timestamp).toLocaleTimeString();
-
-        chart.data.labels.push(label);
+        chart.$timestamps.push(timestamp);
+        chart.data.labels.push(I18n.formatTime(timestamp));
         chart.data.datasets[0].data.push(value);
 
         if (chart.data.labels.length > this.maxPoints) {
+            chart.$timestamps.shift();
             chart.data.labels.shift();
             chart.data.datasets[0].data.shift();
         }
@@ -62,3 +74,7 @@ const ChartsPanel = {
         chart.update("none");
     },
 };
+
+document.addEventListener("DOMContentLoaded", () => {
+    ChartsPanel.init();
+});

@@ -1,29 +1,47 @@
 const AlertsPanel = {
     listEl: null,
+    maxItems: 20,
+    alerts: [], // newest first; kept so the list can be re-rendered on a language switch
 
     init() {
         this.listEl = document.getElementById("alerts-list");
+        I18n.onChange(() => this.render());
     },
 
     addAlert(alert) {
-        if (this.listEl.querySelector(".empty-state")) {
-            this.listEl.innerHTML = "";
+        this.alerts.unshift(alert);
+        // Keep the list from growing unbounded.
+        this.alerts.length = Math.min(this.alerts.length, this.maxItems);
+        this.render();
+    },
+
+    // Engines that report vote counts get a fully localized message; older
+    // payloads without them fall back to the engine's own text.
+    _message(alert) {
+        if (Number.isFinite(alert.votes) && Number.isFinite(alert.detectors_total) && alert.detectors_total > 0) {
+            return I18n.t("alert.confirmed", { votes: alert.votes, total: alert.detectors_total });
+        }
+        return alert.message;
+    },
+
+    render() {
+        if (this.alerts.length === 0) {
+            this.listEl.innerHTML = `<li class="empty-state" data-i18n="alerts.empty">${I18n.t("alerts.empty")}</li>`;
+            return;
         }
 
-        const item = document.createElement("li");
-        item.className = "alert-item";
-        item.innerHTML = `
-            <div class="alert-title">${alert.sensor_id}: ${alert.message}</div>
-            <div class="alert-meta">
-                уверенность ${Math.round(alert.confidence * 100)}% ·
-                ${new Date(alert.timestamp).toLocaleTimeString()}
-            </div>
-        `;
-        this.listEl.prepend(item);
-
-        // Keep the list from growing unbounded.
-        while (this.listEl.children.length > 20) {
-            this.listEl.removeChild(this.listEl.lastChild);
+        this.listEl.innerHTML = "";
+        for (const alert of this.alerts) {
+            const item = document.createElement("li");
+            item.className = "alert-item";
+            item.innerHTML = `
+                <div class="alert-title">${alert.sensor_id}: ${this._message(alert)}</div>
+                <div class="alert-meta">
+                    ${I18n.t("alert.confidence", { percent: Math.round(alert.confidence * 100) })} ·
+                    ${I18n.formatTime(alert.timestamp)}
+                </div>
+            `;
+            this.listEl.appendChild(item);
         }
     },
 };
@@ -34,6 +52,7 @@ const DevicesPanel = {
 
     init() {
         this.listEl = document.getElementById("device-list");
+        I18n.onChange(() => this.render());
     },
 
     setStatus(deviceId, online) {
@@ -49,7 +68,7 @@ const DevicesPanel = {
             item.innerHTML = `
                 <span>${id}</span>
                 <span class="status ${online ? "online" : "offline"}">
-                    ${online ? "online" : "offline"}
+                    ${I18n.t(online ? "device.online" : "device.offline")}
                 </span>
             `;
             this.listEl.appendChild(item);
