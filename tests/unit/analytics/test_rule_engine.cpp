@@ -47,6 +47,8 @@ TEST_CASE("RuleEngine requires the configured vote quorum before publishing", "[
     REQUIRE(received.size() == 1);
     CHECK(received[0].sensor_id == "sensor_a");
     CHECK(received[0].confidence > 0.0);
+    CHECK(received[0].votes == 2);
+    CHECK(received[0].detectors_total == 2);
 }
 
 TEST_CASE("RuleEngine with votes_required=1 fires on a single detector's signal", "[rule_engine]") {

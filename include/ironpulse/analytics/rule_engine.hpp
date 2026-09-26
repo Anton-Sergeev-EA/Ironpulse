@@ -82,6 +82,8 @@ public:
         event.score = max_score;
         event.confidence = max_confidence;
         event.timestamp = timestamp;
+        event.votes = voting_detector_names.size();
+        event.detectors_total = votes.size();
 
         bus_.publish(event);
     }

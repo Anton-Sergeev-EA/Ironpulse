@@ -101,6 +101,8 @@ void HttpServer::setup_routes() {
                 {"sensor_id", event.sensor_id},
                 {"detector", event.detector_name},
                 {"message", event.message},
+                {"votes", event.votes},
+                {"detectors_total", event.detectors_total},
                 {"score", event.score},
                 {"confidence", event.confidence},
                 {"timestamp", to_iso8601(event.timestamp)},

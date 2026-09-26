@@ -47,7 +47,10 @@ std::string anomaly_to_json(const ironpulse::core::AnomalyEvent& anomaly) {
     nlohmann::json j{
         {"type", "anomaly"},
         {"sensor_id", anomaly.sensor_id},
+        {"detector", anomaly.detector_name},
         {"message", anomaly.message},
+        {"votes", anomaly.votes},
+        {"detectors_total", anomaly.detectors_total},
         {"confidence", anomaly.confidence},
         {"score", anomaly.score},
         {"timestamp", ms.count()},
