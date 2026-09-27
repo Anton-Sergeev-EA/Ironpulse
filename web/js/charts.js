@@ -9,6 +9,7 @@ const ChartsPanel = {
         // locale when the viewer switches language.
         I18n.onChange(() => {
             for (const chart of this.charts.values()) {
+                chart.options.locale = I18n.intlLocale();
                 chart.data.labels = chart.$timestamps.map((ts) => I18n.formatTime(ts));
                 chart.update("none");
             }
@@ -44,6 +45,7 @@ const ChartsPanel = {
                 ],
             },
             options: {
+                locale: I18n.intlLocale(), // axis number formatting follows the chosen language
                 animation: false,
                 responsive: true,
                 plugins: { legend: { display: false } },
