@@ -9,6 +9,7 @@ add_executable(ironpulse_tests
     unit/analytics/test_ewma.cpp
     unit/analytics/test_cusum.cpp
     unit/analytics/test_rule_engine.cpp
+    unit/core/test_config_sensors.cpp
 )
 
 target_link_libraries(ironpulse_tests
