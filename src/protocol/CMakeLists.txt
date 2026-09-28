@@ -1,6 +1,8 @@
 add_library(ironpulse_protocol
     frame_codec.cpp
     modbus_client.cpp
+    register_decoder.cpp
+    device_poller.cpp
 )
 add_library(ironpulse::protocol ALIAS ironpulse_protocol)
 
