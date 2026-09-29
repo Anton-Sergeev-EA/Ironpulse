@@ -11,6 +11,8 @@ add_executable(ironpulse_tests
     unit/analytics/test_rule_engine.cpp
     unit/core/test_config_sensors.cpp
     unit/protocol/test_register_decoder.cpp
+    unit/analytics/test_limits.cpp
+    integration/test_pipeline.cpp
 )
 
 target_link_libraries(ironpulse_tests
