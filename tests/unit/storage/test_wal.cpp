@@ -134,3 +134,41 @@ TEST_CASE("RetentionPolicy leaves a file untouched when nothing is prunable", "[
 
     std::filesystem::remove_all(dir);
 }
+
+TEST_CASE("WalWriter::prune_older_than drops expired records and keeps fresh ones", "[wal][retention]") {
+    auto dir = make_temp_dir();
+    const auto now = std::chrono::system_clock::now();
+    WalWriter writer(dir, /*flush_batch_size=*/100);  // keep records pending: prune must flush them
+    writer.append("a", 1.0, now - std::chrono::hours(48));
+    writer.append("a", 2.0, now - std::chrono::hours(1));
+    writer.append("b", 3.0, now - std::chrono::hours(30));
+
+    const auto removed = writer.prune_older_than(std::chrono::hours(24));
+
+    CHECK(removed == 2);
+    const auto a = WalReader::read_all(dir / "a.wal");
+    REQUIRE(a.size() == 1);
+    CHECK(a[0].value == 2.0);
+    CHECK(WalReader::read_all(dir / "b.wal").empty());
+    CHECK_FALSE(std::filesystem::exists(dir / "a.wal.tmp"));
+
+    std::filesystem::remove_all(dir);
+}
+
+TEST_CASE("WalWriter::read_since returns persisted history including pending records", "[wal][history]") {
+    auto dir = make_temp_dir();
+    const auto now = std::chrono::system_clock::now();
+    WalWriter writer(dir, /*flush_batch_size=*/100);
+    writer.append("s", 1.0, now - std::chrono::minutes(10));
+    writer.append("s", 2.0, now - std::chrono::minutes(5));
+    writer.append("s", 3.0, now);
+
+    const auto samples = writer.read_since("s", now - std::chrono::minutes(6));
+
+    REQUIRE(samples.size() == 2);
+    CHECK(samples[0].value == 2.0);
+    CHECK(samples[1].value == 3.0);
+    CHECK(writer.read_since("unknown", now - std::chrono::hours(1)).empty());
+
+    std::filesystem::remove_all(dir);
+}

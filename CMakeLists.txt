@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.20)
 
 project(ironpulse
-    VERSION 0.1.0
+    VERSION 1.0.0
     DESCRIPTION "Industrial telemetry & anomaly detection engine"
     LANGUAGES CXX
 )
@@ -25,6 +25,12 @@ option(IRONPULSE_BUILD_BENCHMARKS "Build benchmarks" OFF)
 option(IRONPULSE_ENABLE_ASAN "Enable AddressSanitizer + UBSan" OFF)
 option(IRONPULSE_ENABLE_TSAN "Enable ThreadSanitizer" OFF)
 option(IRONPULSE_WARNINGS_AS_ERRORS "Treat warnings as errors" OFF)
+
+configure_file(
+    "${CMAKE_SOURCE_DIR}/cmake/version.hpp.in"
+    "${CMAKE_BINARY_DIR}/generated/ironpulse/version.hpp"
+    @ONLY
+)
 
 include(CompilerWarnings)
 include(Sanitizers)

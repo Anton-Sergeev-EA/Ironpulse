@@ -1,6 +1,5 @@
-# Currently header-only (ring_buffer.hpp, series_store.hpp).
-# Will gain a compiled component once wal_writer.cpp (persistence) lands —
-# see docs/adr/0002-storage-format.md.
+# Header-only: ring buffer, series store, write-ahead log and retention
+# (see docs/adr/0002-storage-format.md).
 add_library(ironpulse_storage INTERFACE)
 add_library(ironpulse::storage ALIAS ironpulse_storage)
 

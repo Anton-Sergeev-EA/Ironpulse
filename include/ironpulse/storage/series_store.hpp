@@ -63,6 +63,27 @@ public:
         return it->second->recent(count);
     }
 
+    /// Returns every sample at or after `since`, oldest first. With
+    /// persistence enabled this reads the write-ahead log, so it covers the
+    /// whole retention period rather than only the in-memory window.
+    [[nodiscard]] std::vector<Sample<double>> history(const std::string& sensor_id,
+                                                      std::chrono::system_clock::time_point since) const {
+        if (wal_) {
+            return wal_->read_since(sensor_id, since);
+        }
+        std::vector<Sample<double>> result;
+        for (auto& sample : recent(sensor_id, default_capacity_)) {
+            if (sample.timestamp >= since) {
+                result.push_back(sample);
+            }
+        }
+        return result;
+    }
+
+    [[nodiscard]] bool persistent() const noexcept {
+        return static_cast<bool>(wal_);
+    }
+
     /// Returns the set of sensor IDs currently tracked (i.e. that have
     /// received at least one `record()` call, or were replayed from WAL).
     [[nodiscard]] std::vector<std::string> sensor_ids() const {

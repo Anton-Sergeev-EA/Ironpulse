@@ -65,6 +65,20 @@ public:
         return directory_ / (sensor_id + ".wal");
     }
 
+    /// Drops records older than `max_age` from every WAL file in the
+    /// directory, so the log never grows without bound. Holds the writer's
+    /// lock for the duration, so it cannot race with append()/flush, and
+    /// rewrites each file via a temporary + rename so a crash mid-prune
+    /// never leaves a truncated log behind. Returns the number of records
+    /// removed.
+    std::size_t prune_older_than(std::chrono::milliseconds max_age);
+
+    /// Returns a sensor's persisted samples at or after `since`, oldest
+    /// first — the full retained history, not just what fits in memory.
+    /// Pending records are flushed first so the result is complete.
+    [[nodiscard]] std::vector<Sample<double>> read_since(const std::string& sensor_id,
+                                                         std::chrono::system_clock::time_point since);
+
 private:
     void flush_locked(const std::string& sensor_id, std::vector<WalRecord>& buffer) {
         std::ofstream out(file_for(sensor_id), std::ios::binary | std::ios::app);
@@ -114,5 +128,73 @@ public:
         }
     }
 };
+
+inline std::vector<Sample<double>> WalWriter::read_since(const std::string& sensor_id,
+                                                         std::chrono::system_clock::time_point since) {
+    std::lock_guard lock(mutex_);
+    if (auto it = pending_.find(sensor_id); it != pending_.end() && !it->second.empty()) {
+        flush_locked(sensor_id, it->second);
+    }
+    const auto since_ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(since.time_since_epoch()).count();
+    std::vector<Sample<double>> samples;
+    for (const auto& record : WalReader::read_all(file_for(sensor_id))) {
+        if (record.timestamp_ms >= since_ms) {
+            samples.push_back(Sample<double>{
+                std::chrono::system_clock::time_point(std::chrono::milliseconds(record.timestamp_ms)),
+                record.value});
+        }
+    }
+    return samples;
+}
+
+inline std::size_t WalWriter::prune_older_than(std::chrono::milliseconds max_age) {
+    std::lock_guard lock(mutex_);
+    for (auto& [sensor_id, buffer] : pending_) {
+        if (!buffer.empty()) {
+            flush_locked(sensor_id, buffer);
+        }
+    }
+
+    const auto cutoff_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                               (std::chrono::system_clock::now() - max_age).time_since_epoch())
+                               .count();
+
+    std::size_t removed = 0;
+    std::error_code ec;
+    for (const auto& entry : std::filesystem::directory_iterator(directory_, ec)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".wal") {
+            continue;
+        }
+        const auto records = WalReader::read_all(entry.path());
+        std::vector<WalRecord> kept;
+        kept.reserve(records.size());
+        for (const auto& record : records) {
+            if (record.timestamp_ms >= cutoff_ms) {
+                kept.push_back(record);
+            }
+        }
+        if (kept.size() == records.size()) {
+            continue;
+        }
+
+        auto tmp = entry.path();
+        tmp += ".tmp";
+        {
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(kept.data()),
+                      static_cast<std::streamsize>(kept.size() * sizeof(WalRecord)));
+            if (!out) {
+                std::filesystem::remove(tmp, ec);
+                continue;
+            }
+        }
+        std::filesystem::rename(tmp, entry.path(), ec);
+        if (!ec) {
+            removed += records.size() - kept.size();
+        }
+    }
+    return removed;
+}
 
 }  // namespace ironpulse::storage

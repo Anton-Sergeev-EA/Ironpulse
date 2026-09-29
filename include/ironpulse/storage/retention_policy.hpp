@@ -8,9 +8,9 @@
 
 namespace ironpulse::storage {
 
-/// Rewrites a WAL file in place, keeping only records newer than
-/// `now - max_age`. Intended to run periodically (e.g. once an hour) via
-/// a background timer so WAL files don't grow unbounded.
+/// Rewrites a WAL file, keeping only records newer than `now - max_age`.
+/// For files a live WalWriter is appending to, use
+/// WalWriter::prune_older_than instead — it takes the writer's lock.
 ///
 /// Implementation reads the whole file, filters in memory, and rewrites —
 /// simple and correct, and perfectly adequate at the file sizes a single
@@ -40,9 +40,16 @@ public:
             return kept.size();  // nothing to prune, avoid a needless rewrite
         }
 
-        std::ofstream out(wal_file, std::ios::binary | std::ios::trunc);
-        out.write(reinterpret_cast<const char*>(kept.data()),
-                  static_cast<std::streamsize>(kept.size() * sizeof(WalRecord)));
+        // Write to a temporary file and rename over the original, so a
+        // crash mid-rewrite never leaves a truncated log behind.
+        auto tmp = wal_file;
+        tmp += ".tmp";
+        {
+            std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
+            out.write(reinterpret_cast<const char*>(kept.data()),
+                      static_cast<std::streamsize>(kept.size() * sizeof(WalRecord)));
+        }
+        std::filesystem::rename(tmp, wal_file);
         return kept.size();
     }
 

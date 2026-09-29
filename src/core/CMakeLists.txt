@@ -1,12 +1,14 @@
 add_library(ironpulse_core
     logger.cpp
     config.cpp
+    metrics.cpp
 )
 add_library(ironpulse::core ALIAS ironpulse_core)
 
 target_include_directories(ironpulse_core
     PUBLIC
         $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/include>
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated>
 )
 
 target_link_libraries(ironpulse_core
