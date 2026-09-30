@@ -1,18 +1,19 @@
 add_executable(ironpulse_tests
     unit/protocol/test_frame_codec.cpp
+    unit/protocol/test_register_decoder.cpp
     unit/core/test_thread_pool.cpp
     unit/core/test_event_bus.cpp
     unit/core/test_config.cpp
+    unit/core/test_config_sensors.cpp
+    unit/core/test_metrics.cpp
     unit/storage/test_ring_buffer.cpp
     unit/storage/test_wal.cpp
     unit/analytics/test_detector.cpp
     unit/analytics/test_ewma.cpp
     unit/analytics/test_cusum.cpp
     unit/analytics/test_rule_engine.cpp
-    unit/core/test_config_sensors.cpp
-    unit/core/test_metrics.cpp
-    unit/protocol/test_register_decoder.cpp
     unit/analytics/test_limits.cpp
+    unit/api/test_http_api.cpp
     unit/notify/test_notify.cpp
     integration/test_pipeline.cpp
 )
@@ -24,6 +25,7 @@ target_link_libraries(ironpulse_tests
         ironpulse::protocol
         ironpulse::storage
         ironpulse::analytics
+        ironpulse::api
         ironpulse::notify
         Catch2::Catch2WithMain
 )

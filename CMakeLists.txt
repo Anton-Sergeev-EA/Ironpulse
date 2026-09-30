@@ -63,6 +63,7 @@ target_link_libraries(ironpulse
         ironpulse::storage
         ironpulse::analytics
         ironpulse::api
+        ironpulse::notify
 )
 
 if(IRONPULSE_BUILD_TESTS)
