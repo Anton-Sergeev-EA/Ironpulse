@@ -52,6 +52,7 @@ add_subdirectory(src/protocol)
 add_subdirectory(src/storage)
 add_subdirectory(src/analytics)
 add_subdirectory(src/api)
+add_subdirectory(src/notify)
 
 add_executable(ironpulse src/main.cpp)
 target_link_libraries(ironpulse

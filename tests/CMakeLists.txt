@@ -13,6 +13,7 @@ add_executable(ironpulse_tests
     unit/core/test_metrics.cpp
     unit/protocol/test_register_decoder.cpp
     unit/analytics/test_limits.cpp
+    unit/notify/test_notify.cpp
     integration/test_pipeline.cpp
 )
 
@@ -23,6 +24,7 @@ target_link_libraries(ironpulse_tests
         ironpulse::protocol
         ironpulse::storage
         ironpulse::analytics
+        ironpulse::notify
         Catch2::Catch2WithMain
 )
 
