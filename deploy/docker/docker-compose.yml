@@ -47,6 +47,15 @@ services:
       IRONPULSE_RETENTION_HOURS: "${RETENTION_HOURS:-168}"
       IRONPULSE_PERSISTENCE_ENABLED: "true"
       IRONPULSE_DATA_DIR: "/app/data"
+      # Security and notifications — all optional, all set in .env
+      # (see .env.example). Empty values leave the feature off.
+      IRONPULSE_API_TOKEN: "${IRONPULSE_API_TOKEN:-}"
+      IRONPULSE_PUBLIC_URL: "${IRONPULSE_PUBLIC_URL:-}"
+      IRONPULSE_NOTIFY_LANGUAGE: "${NOTIFY_LANGUAGE:-ru}"
+      IRONPULSE_TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN:-}"
+      IRONPULSE_TELEGRAM_CHAT_ID: "${TELEGRAM_CHAT_ID:-}"
+      IRONPULSE_SLACK_WEBHOOK_URL: "${SLACK_WEBHOOK_URL:-}"
+      IRONPULSE_WEBHOOK_URL: "${WEBHOOK_URL:-}"
     ports:
       - "${IRONPULSE_BIND_HOST:-0.0.0.0}:${HTTP_PORT:-8080}:${HTTP_PORT:-8080}"
       - "${IRONPULSE_BIND_HOST:-0.0.0.0}:${WS_PORT:-8081}:${WS_PORT:-8081}"

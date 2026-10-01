@@ -1,0 +1,3 @@
+# Python tooling (the Modbus simulator): `ruff check` and `ruff format`.
+line-length = 120
+target-version = "py310"

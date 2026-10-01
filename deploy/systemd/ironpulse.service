@@ -20,6 +20,13 @@ StandardError=journal
 # Environment=IRONPULSE_HTTP_PORT=8080
 # Environment=IRONPULSE_WS_PORT=8081
 # Environment=IRONPULSE_LOG_LEVEL=info
+#
+# Secrets are better kept out of the unit file, in a root-only file:
+#   /etc/ironpulse/ironpulse.env  (chmod 600), e.g.
+#     IRONPULSE_API_TOKEN=...
+#     IRONPULSE_TELEGRAM_BOT_TOKEN=...
+#     IRONPULSE_TELEGRAM_CHAT_ID=...
+EnvironmentFile=-/etc/ironpulse/ironpulse.env
 
 # Hardening
 NoNewPrivileges=true
@@ -27,6 +34,12 @@ PrivateTmp=true
 ProtectSystem=strict
 ReadWritePaths=/opt/ironpulse/data
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+CapabilityBoundingSet=
 
 [Install]
 WantedBy=multi-user.target

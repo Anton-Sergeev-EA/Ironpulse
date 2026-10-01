@@ -11,21 +11,33 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ninja-build \
         git \
         ca-certificates \
+        libssl-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /src
 COPY . .
 
-RUN cmake --preset release \
-    && cmake --build --preset release -j"$(nproc)"
+# HTTPLIB_REQUIRE_OPENSSL: fail the build rather than silently producing an
+# image that cannot deliver notifications to https:// endpoints (Telegram,
+# Slack and most webhooks).
+RUN cmake --preset release -DHTTPLIB_REQUIRE_OPENSSL=ON \
+    && cmake --build --preset release -j"$(nproc)" \
+    && strip build/release/ironpulse
 
 # ---------------------------------------------------------------------------
 # Stage 2: runtime — minimal image, no compiler/toolchain
 # ---------------------------------------------------------------------------
 FROM debian:bookworm-slim AS runtime
 
+LABEL org.opencontainers.image.title="Ironpulse" \
+      org.opencontainers.image.description="Industrial telemetry and anomaly detection engine (Modbus TCP)" \
+      org.opencontainers.image.source="https://github.com/Anton-Sergeev-EA/Ironpulse" \
+      org.opencontainers.image.licenses="MIT"
+
+# ca-certificates + libssl3: TLS for outgoing notifications.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
+        libssl3 \
         wget \
     && rm -rf /var/lib/apt/lists/* \
     && useradd --system --create-home --shell /usr/sbin/nologin ironpulse
@@ -35,8 +47,9 @@ COPY --from=build /src/build/release/ironpulse /app/ironpulse
 COPY web/ /app/web/
 COPY deploy/config/config.example.json /app/config.json
 
-RUN chown -R ironpulse:ironpulse /app
+RUN mkdir -p /app/data && chown -R ironpulse:ironpulse /app
 USER ironpulse
+VOLUME ["/app/data"]
 
 EXPOSE 8080 8081
 

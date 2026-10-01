@@ -9,20 +9,113 @@
   "data_dir": "/app/data",
   "persistence_enabled": true,
   "retention_hours": 168,
+  "api_token": "${IRONPULSE_API_TOKEN}",
   "devices": [
     {
-      "id": "transformer_temp_01",
+      "id": "transformer_01",
       "host": "simulator",
       "port": 5020,
       "unit_id": 1,
-      "poll_interval_ms": 1000
+      "poll_interval_ms": 1000,
+      "timeout_ms": 3000,
+      "sensors": [
+        {
+          "id": "winding_temp",
+          "name": "Winding temperature",
+          "unit": "°C",
+          "register_type": "holding",
+          "address": 0,
+          "data_type": "float32",
+          "word_order": "big",
+          "limits": {
+            "high": 90
+          },
+          "detection": {
+            "detectors": [
+              {
+                "type": "zscore",
+                "window": 60,
+                "threshold": 3.0
+              },
+              {
+                "type": "ewma",
+                "alpha": 0.2,
+                "threshold": 3.0
+              }
+            ],
+            "votes_required": 1,
+            "cooldown_seconds": 30
+          }
+        },
+        {
+          "id": "oil_temp",
+          "name": "Oil temperature",
+          "unit": "°C",
+          "register_type": "input",
+          "address": 0,
+          "data_type": "int16",
+          "scale": 0.1,
+          "limits": {
+            "high": 75
+          },
+          "detection": {
+            "detectors": [
+              {
+                "type": "cusum",
+                "mean": 55.0,
+                "stddev": 0.5,
+                "slack": 0.5,
+                "threshold": 8.0
+              }
+            ],
+            "votes_required": 1,
+            "cooldown_seconds": 120
+          }
+        }
+      ]
     },
     {
-      "id": "bearing_vibration_02",
+      "id": "pump_02",
       "host": "simulator",
       "port": 5020,
       "unit_id": 2,
-      "poll_interval_ms": 500
+      "poll_interval_ms": 500,
+      "timeout_ms": 3000,
+      "sensors": [
+        {
+          "id": "bearing_vibration",
+          "name": "Bearing vibration",
+          "unit": "mm/s",
+          "address": 0,
+          "data_type": "uint16",
+          "scale": 0.01,
+          "limits": {
+            "high": 7.1
+          }
+        },
+        {
+          "id": "pump_pressure",
+          "name": "Discharge pressure",
+          "unit": "bar",
+          "address": 1,
+          "data_type": "uint16",
+          "scale": 0.1,
+          "limits": {
+            "low": 4.0,
+            "high": 10.0
+          },
+          "detection": {
+            "detectors": [],
+            "cooldown_seconds": 60
+          }
+        }
+      ]
     }
-  ]
+  ],
+  "notifications": {
+    "language": "ru",
+    "min_severity": "warning",
+    "dashboard_url": "${IRONPULSE_PUBLIC_URL}",
+    "channels": []
+  }
 }
