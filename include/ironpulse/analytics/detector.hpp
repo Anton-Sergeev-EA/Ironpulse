@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cmath>
 #include <deque>
 #include <memory>
@@ -25,15 +26,21 @@ public:
 /// Rolling z-score detector: flags samples that deviate more than
 /// `threshold_sigma` standard deviations from the mean of the last
 /// `window_size` samples.
+///
+/// It only votes once half the window (at least 5 samples) has been seen:
+/// a mean and standard deviation over two or three readings are noise,
+/// and voting on them produced false alarms right after every restart.
 class ZScoreDetector final : public AnomalyDetector {
 public:
     explicit ZScoreDetector(std::size_t window_size = 60, double threshold_sigma = 3.0)
-        : window_size_(window_size), threshold_sigma_(threshold_sigma) {}
+        : window_size_(window_size),
+          threshold_sigma_(threshold_sigma),
+          warmup_(std::min(window_size, std::max<std::size_t>(5, window_size / 2))) {}
 
     AnomalyResult observe(double value) override {
         AnomalyResult result;
 
-        if (window_.size() >= 2) {
+        if (window_.size() >= std::max<std::size_t>(2, warmup_)) {
             const double mean = compute_mean();
             const double stddev = compute_stddev(mean);
 
@@ -75,6 +82,7 @@ private:
 
     std::size_t window_size_;
     double threshold_sigma_;
+    std::size_t warmup_;
     std::deque<double> window_;
 };
 

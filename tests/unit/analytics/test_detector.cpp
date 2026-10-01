@@ -34,3 +34,20 @@ TEST_CASE("ZScoreDetector needs at least two samples before scoring", "[detector
     CHECK_FALSE(first.is_anomaly);
     CHECK(first.score == 0.0);
 }
+
+TEST_CASE("ZScoreDetector does not vote before half its window is filled", "[detector]") {
+    ZScoreDetector detector(/*window_size=*/60, /*threshold_sigma=*/3.0);  // warm-up: 30 samples
+
+    bool any_anomaly = false;
+    for (int i = 0; i < 29; ++i) {
+        any_anomaly |= detector.observe(i % 2 == 0 ? 100.0 : 101.0).is_anomaly;
+    }
+    any_anomaly |= detector.observe(500.0).is_anomaly;  // 30th sample: still warming up
+    CHECK_FALSE(any_anomaly);
+
+    ZScoreDetector warmed(/*window_size=*/60, /*threshold_sigma=*/3.0);
+    for (int i = 0; i < 30; ++i) {
+        warmed.observe(i % 2 == 0 ? 100.0 : 101.0);
+    }
+    CHECK(warmed.observe(500.0).is_anomaly);  // same spike, once warmed up
+}
