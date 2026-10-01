@@ -11,7 +11,7 @@ I18n.register("es", {
         "en tiempo real. Consulta los sensores mediante Modbus TCP, almacena las lecturas como " +
         "series temporales (en memoria y en disco mediante un write-ahead log), detecta anomalías " +
         "con varias estrategias estadísticas (z-score, EWMA, CUSUM) combinadas por votación de " +
-        "quórum y envía los resultados a este panel en tiempo real a través de una API REST + WebSocket.",
+        "quórum, vigila los límites configurados, envía notificaciones a Telegram, Slack y webhooks y transmite los resultados a este panel en tiempo real a través de una API REST + WebSocket.",
     "about.stack":
         "<strong>Tecnologías:</strong> C++20 (núcleo, cliente Modbus, almacenamiento, analítica, " +
         "API REST y WebSocket), JavaScript (panel), Python (simulador de dispositivos Modbus para " +
@@ -27,4 +27,20 @@ I18n.register("es", {
 
     "alert.confirmed": "anomalía confirmada por {votes} de {total} detectores",
     "alert.confidence": "confianza {percent} %",
+
+    "auth.title": "Se requiere un token de acceso",
+    "auth.description": "Este servidor está protegido. Introduce el token de API que te proporcionó el administrador.",
+    "auth.placeholder": "Token de API",
+    "auth.submit": "Entrar",
+    "auth.invalid": "Token no válido",
+    "auth.unreachable": "Servidor no disponible, inténtalo de nuevo",
+    "alert.limit_high": "el valor {value} supera el límite {limit}",
+    "alert.limit_low": "el valor {value} está por debajo del límite {limit}",
+    "severity.critical": "crítico",
+    "severity.warning": "advertencia",
+    "chart.download": "Descargar CSV",
+    "chart.limit_high": "máx.",
+    "chart.limit_low": "mín.",
+    "devices.empty": "No hay dispositivos configurados",
+    "device.sensors": "sensores: {count}",
 });

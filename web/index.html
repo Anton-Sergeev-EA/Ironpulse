@@ -30,7 +30,8 @@
             в реальном времени. Опрашивает датчики по протоколу Modbus TCP, сохраняет показания
             как временные ряды (в памяти и на диске через write-ahead log), обнаруживает
             аномалии с помощью нескольких статистических стратегий (z-score, EWMA, CUSUM) с
-            голосованием по кворуму, и отдаёт результат через REST + WebSocket API на этот
+            голосованием по кворуму, следит за заданными пределами, рассылает уведомления в
+            Telegram, Slack и по webhook, и отдаёт результат через REST + WebSocket API на этот
             дашборд в реальном времени.
         </p>
         <p class="about-stack" data-i18n-html="about.stack">
@@ -59,6 +60,22 @@
         </section>
     </main>
 
+    <footer class="page-footer">
+        <span>Ironpulse <span id="app-version"></span></span>
+    </footer>
+
+    <dialog id="auth-dialog" class="auth-dialog" aria-labelledby="auth-title">
+        <form id="auth-form" method="dialog">
+            <h2 id="auth-title" data-i18n="auth.title">Нужен токен доступа</h2>
+            <p data-i18n="auth.description">Этот сервер защищён. Введите API-токен, который выдал администратор.</p>
+            <label class="visually-hidden" for="auth-token" data-i18n="auth.placeholder">API-токен</label>
+            <input id="auth-token" type="password" autocomplete="current-password" spellcheck="false"
+                   data-i18n-attr="placeholder:auth.placeholder" />
+            <p id="auth-error" class="auth-error" role="alert" data-i18n="auth.invalid" hidden>Неверный токен</p>
+            <button id="auth-submit" type="submit" data-i18n="auth.submit">Войти</button>
+        </form>
+    </dialog>
+
     <!-- Bundled locally (web/js/vendor/) rather than loaded from a CDN:
          the dashboard has to work in restricted/offline network
          environments (e.g. certain VDS or corporate networks where
@@ -76,9 +93,11 @@
     <script src="js/i18n/locales/de.js"></script>
     <script src="js/i18n/locales/it.js"></script>
     <script src="js/api-client.js"></script>
+    <script src="js/sensors.js"></script>
     <script src="js/charts.js"></script>
     <script src="js/alerts-panel.js"></script>
-    <script src="js/app-init.js"></script>
+    <script src="js/auth-dialog.js"></script>
     <script src="js/ws-client.js"></script>
+    <script src="js/app-init.js"></script>
 </body>
 </html>

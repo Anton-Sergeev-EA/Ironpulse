@@ -14,12 +14,16 @@
 //
 // If the same-origin attempt fails (no reverse proxy in front, e.g. local
 // development with `docker compose up` talking directly to ironpulse's
-// ports), this client falls back to asking the REST API which port the
-// WS server is actually on (GET /api/v1/config) and connecting directly.
+// ports), this client falls back to the WS port reported by
+// GET /api/v1/config and connects directly.
+//
+// When the engine requires an API token it is passed as ?token=, the only
+// option browsers offer for a WebSocket handshake.
 //
 // Expected message shapes:
 //   { "type": "reading", "sensor_id": "...", "value": 65.3, "timestamp": ... }
-//   { "type": "anomaly",  "sensor_id": "...", "message": "...", "confidence": 0.87, "timestamp": ... }
+//   { "type": "anomaly", "sensor_id": "...", "kind": "limit" | "statistical",
+//     "severity": "critical" | "warning", "value": ..., "limit": ..., "timestamp": ... }
 //   { "type": "device_status", "device_id": "...", "online": true }
 const WsClient = {
     socket: null,
@@ -28,12 +32,21 @@ const WsClient = {
     resolvedUrl: null, // cached once a connection strategy succeeds
     statusKey: "connection.connecting",
 
-    connect() {
+    config: null,
+
+    connect(config) {
+        if (config) {
+            this.config = config;
+        }
         if (this.resolvedUrl) {
             this._connectTo(this.resolvedUrl);
             return;
         }
         this._trySameOriginThenFallback();
+    },
+
+    _withToken(url) {
+        return IronpulseApi.token ? `${url}?token=${encodeURIComponent(IronpulseApi.token)}` : url;
     },
 
     _wsProtocol() {
@@ -42,7 +55,7 @@ const WsClient = {
 
     _trySameOriginThenFallback() {
         const sameOriginUrl = `${this._wsProtocol()}//${window.location.host}/ws/live`;
-        const probe = new WebSocket(sameOriginUrl);
+        const probe = new WebSocket(this._withToken(sameOriginUrl));
         let settled = false;
 
         const fallbackTimer = setTimeout(() => {
@@ -72,8 +85,8 @@ const WsClient = {
 
     async _connectDirectViaConfig() {
         try {
-            const response = await fetch("/api/v1/config");
-            const config = await response.json();
+            const config = this.config?.ws_port ? this.config : await IronpulseApi.getConfig();
+            this.config = config;
             const host = config.ws_host || window.location.hostname;
             const url = `${this._wsProtocol()}//${host}:${config.ws_port}/live`;
             this.resolvedUrl = url;
@@ -86,7 +99,7 @@ const WsClient = {
     },
 
     _connectTo(url) {
-        this.socket = new WebSocket(url);
+        this.socket = new WebSocket(this._withToken(url));
         this._wireSocketEvents(this.socket);
     },
 
@@ -131,6 +144,4 @@ const WsClient = {
     },
 };
 
-document.addEventListener("DOMContentLoaded", () => {
-    WsClient.connect();
-});
+// Started by AppInit once the initial state (and, if needed, the token) is loaded.

@@ -85,6 +85,10 @@ const I18n = {
         return new Date(timestamp).toLocaleTimeString(this.intlLocale());
     },
 
+    formatNumber(value) {
+        return new Intl.NumberFormat(this.intlLocale(), { maximumFractionDigits: 2 }).format(value);
+    },
+
     apply() {
         document.documentElement.lang = this.locale;
         document.title = this.t("page.title");
