@@ -9,7 +9,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen)](tests)
 
-[Русский](README.md) · **English**
+[Русский](README.md) · **English** · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
 ## What is it?
 Picture a plant with dozens of sensors: transformer winding temperature, motor bearing vibration, pump pressure. Today someone has to notice it on a screen — or worse, hear a loud noise — before realising a part is overheating or about to fail.
@@ -36,7 +36,7 @@ You **don't** need to know C++ to run it — see [Quick start](#quick-start). Do
 On the left, devices and their connection status. In the middle, a card per sensor: name, a large current value in the sensor's units (red when outside its limits), a live chart with dashed limit lines and a CSV export button. On the right, the alert feed: red "critical" for limit breaches, amber "warning" for statistical anomalies. Everything updates in real time without reloading, and works as well on a control-room screen as on a phone.
 
 ## Interface languages.
-The dashboard and the notifications are available in 8 languages: **Russian** (primary), English, Chinese, Hindi, Spanish, French, German and Italian — the switcher is in the top-right corner. The dashboard language is chosen in this order:
+The dashboard and the notifications are available in 8 languages: **Russian** (primary), English, Chinese, Hindi, Spanish, French, German and Italian — the switcher is in the top-right corner. This document is available in the same 8 languages (links at the top). The dashboard language is chosen in this order:
 1. the `?lang=` URL parameter, e.g. `http://localhost:8080/?lang=en` (handy for sharing a link);
 2. the language previously chosen in this browser;
 3. the browser's language, if supported;
