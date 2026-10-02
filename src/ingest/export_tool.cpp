@@ -5,6 +5,7 @@
 //   ironpulse-export dump   [--sensor ID] <segment|directory>...   (CSV on stdout)
 
 #include <algorithm>
+#include <charconv>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
@@ -144,8 +145,10 @@ int dump(const std::vector<fs::path>& files, const std::string& sensor_filter) {
                 if (!sensor_filter.empty() && sensor != sensor_filter) {
                     continue;
                 }
+                // Shortest text that parses back to exactly the same double.
                 char value[32];
-                std::snprintf(value, sizeof(value), "%.17g", sample.value);
+                const auto [end, ec] = std::to_chars(value, value + sizeof(value), sample.value);
+                *(ec == std::errc{} ? end : value) = '\0';
                 std::cout << iso8601(sample.timestamp_ms) << ',' << csv(sensor) << ','
                           << csv(tag != nullptr ? tag->device_id : "") << ',' << value << ','
                           << csv(tag != nullptr ? tag->unit : "") << ',' << static_cast<unsigned>(sample.quality)

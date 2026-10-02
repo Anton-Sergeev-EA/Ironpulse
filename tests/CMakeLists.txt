@@ -5,9 +5,14 @@ add_executable(ironpulse_tests
     unit/core/test_event_bus.cpp
     unit/core/test_config.cpp
     unit/core/test_config_sensors.cpp
+    unit/core/test_config_export.cpp
     unit/core/test_metrics.cpp
     unit/storage/test_ring_buffer.cpp
     unit/storage/test_wal.cpp
+    unit/ingest/test_spsc_ring_buffer.cpp
+    unit/ingest/test_serializer.cpp
+    unit/ingest/test_ingestor.cpp
+    unit/ingest/test_export.cpp
     unit/analytics/test_detector.cpp
     unit/analytics/test_ewma.cpp
     unit/analytics/test_cusum.cpp
@@ -24,6 +29,7 @@ target_link_libraries(ironpulse_tests
         ironpulse::core
         ironpulse::protocol
         ironpulse::storage
+        ironpulse::ingest
         ironpulse::analytics
         ironpulse::api
         ironpulse::notify

@@ -1,134 +1,164 @@
-#include <gtest/gtest.h>
-
 #include <atomic>
+#include <catch2/catch_test_macros.hpp>
+#include <cstddef>
 #include <memory>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
 #include "ironpulse/ingest/ring_buffer.hpp"
 
-using namespace ironpulse::ingest;
+using ironpulse::ingest::SpscRingBuffer;
 
 namespace {
 
-// Helper move-only struct for testing zero-copy guarantees.
-struct MoveOnlyType {
-    int id;
-    explicit MoveOnlyType(int value) : id(value) {}
-
-    MoveOnlyType(const MoveOnlyType&) = delete;
-    MoveOnlyType& operator=(const MoveOnlyType&) = delete;
-
-    MoveOnlyType(MoveOnlyType&&) noexcept = default;
-    MoveOnlyType& operator=(MoveOnlyType&&) noexcept = default;
+/// Move-only and not default-constructible: the buffer must cope with both.
+struct MoveOnly {
+    explicit MoveOnly(int v) : value(v) {}
+    MoveOnly(const MoveOnly&) = delete;
+    MoveOnly& operator=(const MoveOnly&) = delete;
+    MoveOnly(MoveOnly&&) noexcept = default;
+    MoveOnly& operator=(MoveOnly&&) noexcept = default;
+    int value;
 };
 
-}  // namespace.
-
-TEST(RingBufferTest, BasicPushPop) {
-    RingBuffer<int, 4> rb;
-
-    EXPECT_EQ(rb.capacity(), 4);
-    EXPECT_TRUE(rb.empty());
-
-    EXPECT_TRUE(rb.push(1));
-    EXPECT_TRUE(rb.push(2));
-    EXPECT_TRUE(rb.push(3));
-
-    // Capacity logic check (3 items inserted out of 4 capacity slots available).
-    EXPECT_FALSE(rb.empty());
-
-    int val = 0;
-    EXPECT_TRUE(rb.pop(val));
-    EXPECT_EQ(val, 1);
-
-    EXPECT_TRUE(rb.pop(val));
-    EXPECT_EQ(val, 2);
-
-    EXPECT_TRUE(rb.pop(val));
-    EXPECT_EQ(val, 3);
-
-    EXPECT_FALSE(rb.pop(val));  // Buffer is now empty.
-    EXPECT_TRUE(rb.empty());
-}
-
-TEST(RingBufferTest, MoveOnlySemanticsAndEmplace) {
-    RingBuffer<MoveOnlyType, 8> rb;
-
-    // Test emplace-construction in-place.
-    EXPECT_TRUE(rb.emplace(100));
-    EXPECT_TRUE(rb.emplace(200));
-
-    // Test pushing rvalue reference.
-    EXPECT_TRUE(rb.push(MoveOnlyType(300)));
-
-    MoveOnlyType item(0);
-    EXPECT_TRUE(rb.pop(item));
-    EXPECT_EQ(item.id, 100);
-
-    EXPECT_TRUE(rb.pop(item));
-    EXPECT_EQ(item.id, 200);
-
-    EXPECT_TRUE(rb.pop(item));
-    EXPECT_EQ(item.id, 300);
-}
-
-TEST(RingBufferTest, WraparoundBehavior) {
-    RingBuffer<int, 4> rb;
-
-    for (int cycle = 0; cycle < 10; ++cycle) {
-        EXPECT_TRUE(rb.push(cycle));
-        int val = -1;
-        EXPECT_TRUE(rb.pop(val));
-        EXPECT_EQ(val, cycle);
+/// Counts live instances, to prove the destructor cleans up queued elements.
+struct Tracked {
+    explicit Tracked(std::atomic<int>& live) : live_(&live) {
+        live_->fetch_add(1);
     }
-    EXPECT_TRUE(rb.empty());
+    Tracked(Tracked&& other) noexcept : live_(other.live_) {
+        live_->fetch_add(1);
+    }
+    Tracked& operator=(Tracked&& other) noexcept {
+        live_ = other.live_;
+        return *this;
+    }
+    Tracked(const Tracked&) = delete;
+    Tracked& operator=(const Tracked&) = delete;
+    ~Tracked() {
+        live_->fetch_sub(1);
+    }
+    std::atomic<int>* live_;
+};
+
+}  // namespace
+
+TEST_CASE("SpscRingBuffer pops elements in FIFO order", "[ingest][spsc]") {
+    SpscRingBuffer<int> rb(4);
+    CHECK(rb.capacity() == 4);
+    CHECK(rb.empty());
+
+    CHECK(rb.push(1));
+    CHECK(rb.push(2));
+    CHECK(rb.push(3));
+    CHECK(rb.size() == 3);
+
+    int value = 0;
+    REQUIRE(rb.pop(value));
+    CHECK(value == 1);
+    REQUIRE(rb.pop(value));
+    CHECK(value == 2);
+    REQUIRE(rb.pop(value));
+    CHECK(value == 3);
+    CHECK_FALSE(rb.pop(value));
+    CHECK(rb.empty());
 }
 
-TEST(RingBufferTest, ConcurrentSPSCStressTest) {
-    constexpr std::size_t kIterations = 1'000'000;
-    RingBuffer<std::size_t, 1024> rb;
+TEST_CASE("SpscRingBuffer rejects pushes when full and accepts them again after a pop", "[ingest][spsc]") {
+    SpscRingBuffer<int> rb(4);
+    for (int i = 0; i < 4; ++i) {
+        REQUIRE(rb.push(i));
+    }
+    CHECK_FALSE(rb.push(99));
+    CHECK(rb.size() == 4);
 
-    std::atomic<bool> start_flag{false};
+    int value = -1;
+    REQUIRE(rb.pop(value));
+    CHECK(value == 0);
+    CHECK(rb.push(4));
+}
 
-    // Producer Thread.
-    std::thread producer([&]() {
-        while (!start_flag.load(std::memory_order_relaxed)) {
-        }
+TEST_CASE("SpscRingBuffer requires a power-of-two capacity of at least 2", "[ingest][spsc]") {
+    CHECK_THROWS_AS(SpscRingBuffer<int>(0), std::invalid_argument);
+    CHECK_THROWS_AS(SpscRingBuffer<int>(1), std::invalid_argument);
+    CHECK_THROWS_AS(SpscRingBuffer<int>(6), std::invalid_argument);
+    CHECK_NOTHROW(SpscRingBuffer<int>(2));
+    CHECK_NOTHROW(SpscRingBuffer<int>(1024));
+}
 
-        for (std::size_t i = 0; i < kIterations; ++i) {
+TEST_CASE("SpscRingBuffer supports move-only, non-default-constructible types", "[ingest][spsc]") {
+    SpscRingBuffer<MoveOnly> rb(8);
+    CHECK(rb.emplace(100));
+    CHECK(rb.emplace(200));
+    CHECK(rb.push(MoveOnly(300)));
+
+    MoveOnly out(0);
+    REQUIRE(rb.pop(out));
+    CHECK(out.value == 100);
+    REQUIRE(rb.pop(out));
+    CHECK(out.value == 200);
+    REQUIRE(rb.pop(out));
+    CHECK(out.value == 300);
+}
+
+TEST_CASE("SpscRingBuffer keeps order across many wrap-arounds", "[ingest][spsc]") {
+    SpscRingBuffer<int> rb(4);
+    for (int cycle = 0; cycle < 1000; ++cycle) {
+        REQUIRE(rb.push(cycle));
+        REQUIRE(rb.push(cycle + 1));
+        int a = -1;
+        int b = -1;
+        REQUIRE(rb.pop(a));
+        REQUIRE(rb.pop(b));
+        CHECK(a == cycle);
+        CHECK(b == cycle + 1);
+    }
+    CHECK(rb.empty());
+}
+
+TEST_CASE("SpscRingBuffer destroys elements still queued when it is destroyed", "[ingest][spsc]") {
+    std::atomic<int> live{0};
+    {
+        SpscRingBuffer<Tracked> rb(8);
+        REQUIRE(rb.emplace(live));
+        REQUIRE(rb.emplace(live));
+        REQUIRE(rb.emplace(live));
+        CHECK(live.load() == 3);
+    }
+    CHECK(live.load() == 0);
+}
+
+TEST_CASE("SpscRingBuffer delivers every element in order between two threads", "[ingest][spsc][concurrency]") {
+    constexpr std::size_t kCount = 1'000'000;
+    SpscRingBuffer<std::size_t> rb(1024);
+    std::vector<std::size_t> received;
+    received.reserve(kCount);
+
+    std::thread producer([&] {
+        for (std::size_t i = 0; i < kCount; ++i) {
             while (!rb.push(i)) {
-                std::this_thread::yield();  // Backoff on full buffer.
+                std::this_thread::yield();
             }
         }
     });
-
-    // Consumer Thread.
-    std::vector<std::size_t> consumed_items;
-    consumed_items.reserve(kIterations);
-
-    std::thread consumer([&]() {
-        while (!start_flag.load(std::memory_order_relaxed)) {
-        }
-
+    std::thread consumer([&] {
         std::size_t value = 0;
-        for (std::size_t i = 0; i < kIterations; ++i) {
-            while (!rb.pop(value)) {
-                std::this_thread::yield();  // Backoff on empty buffer.
+        while (received.size() < kCount) {
+            if (rb.pop(value)) {
+                received.push_back(value);
+            } else {
+                std::this_thread::yield();
             }
-            consumed_items.push_back(value);
         }
     });
-
-    // Release threads simultaneously.
-    start_flag.store(true, std::memory_order_release);
-
     producer.join();
     consumer.join();
 
-    // Verify ordering and completeness.
-    ASSERT_EQ(consumed_items.size(), kIterations);
-    for (std::size_t i = 0; i < kIterations; ++i) {
-        EXPECT_EQ(consumed_items[i], i);
+    REQUIRE(received.size() == kCount);
+    bool in_order = true;
+    for (std::size_t i = 0; i < kCount; ++i) {
+        in_order = in_order && received[i] == i;
     }
+    CHECK(in_order);
 }

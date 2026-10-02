@@ -48,10 +48,10 @@ inline constexpr const char* kPartialSuffix = ".part";
 /// What a tag_id stands for.
 struct TagInfo {
     std::uint32_t id = 0;
-    std::string sensor_id;
-    std::string device_id;
-    std::string name;
-    std::string unit;
+    std::string sensor_id{};
+    std::string device_id{};
+    std::string name{};
+    std::string unit{};
 };
 
 [[nodiscard]] std::string encode_tag_table(const std::vector<TagInfo>& tags);

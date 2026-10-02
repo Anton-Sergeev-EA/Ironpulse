@@ -29,7 +29,7 @@ struct alignas(8) TelemetrySample {
     std::uint64_t timestamp_ms;  // Unix epoch, milliseconds (UTC)
     double value;                // engineering units, scale/offset already applied
     std::uint32_t tag_id;        // index into the segment's tag table
-    std::uint8_t quality;        // 0 = good; other values reserved
+    std::uint8_t quality = 0;    // 0 = good; other values reserved
     std::uint8_t reserved[3]{};  // explicit padding, always zero
 };
 static_assert(sizeof(TelemetrySample) == 24);
