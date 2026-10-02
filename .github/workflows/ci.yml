@@ -29,7 +29,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build ${{ matrix.cc }} ${{ matrix.cxx }}
+          sudo apt-get install -y ninja-build libssl-dev ${{ matrix.cc }} ${{ matrix.cxx }}
 
       - name: Configure
         env:
@@ -52,7 +52,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build libssl-dev
 
       - name: Configure
         run: cmake --preset asan
@@ -72,7 +72,7 @@ jobs:
       - name: Install toolchain
         run: |
           sudo apt-get update
-          sudo apt-get install -y ninja-build
+          sudo apt-get install -y ninja-build libssl-dev
 
       - name: Configure
         run: cmake --preset tsan
@@ -94,6 +94,49 @@ jobs:
         run: |
           find include src tests -name '*.cpp' -o -name '*.hpp' | \
             xargs clang-format-18 --dry-run --Werror
+
+  python-lint:
+    name: Python lint (simulator)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install ruff
+        run: pipx install ruff
+      - name: Lint
+        run: ruff check tools/
+      - name: Check formatting
+        run: ruff format --check tools/
+
+  web-check:
+    name: Dashboard scripts and translations
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Syntax check
+        run: find web/js -name '*.js' -not -path '*/vendor/*' -print0 | xargs -0 -n1 node --check
+      - name: Every language has every key
+        run: |
+          node -e '
+            global.I18n = { d: {}, register(code, dict) { this.d[code] = dict; } };
+            const fs = require("fs");
+            for (const f of fs.readdirSync("web/js/i18n/locales")) require("./web/js/i18n/locales/" + f);
+            const ref = Object.keys(I18n.d.ru).sort();
+            let ok = true;
+            for (const [code, dict] of Object.entries(I18n.d)) {
+              const keys = Object.keys(dict).sort();
+              const missing = ref.filter((k) => !keys.includes(k));
+              const extra = keys.filter((k) => !ref.includes(k));
+              if (missing.length || extra.length) {
+                ok = false;
+                console.error(code, "missing:", missing, "extra:", extra);
+              }
+            }
+            if (!ok) process.exit(1);
+            console.log("languages:", Object.keys(I18n.d).join(", "), "- keys:", ref.length);
+          '
 
   docker-build:
     name: Docker image build
@@ -141,5 +184,14 @@ jobs:
           docker inspect --format='{{.State.Health.Status}}' ironpulse-app
           curl -sf http://localhost:8080/healthz
           curl -sf http://localhost:8080/api/v1/devices
+          # Readings must actually flow from the simulator through the engine.
+          for i in $(seq 1 15); do
+            count=$(curl -sf http://localhost:8080/api/v1/sensors | python3 -c 'import json,sys; print(sum(1 for s in json.load(sys.stdin) if s["latest"]))')
+            [ "$count" = "4" ] && break
+            sleep 2
+          done
+          echo "sensors with live values: $count"
+          [ "$count" = "4" ]
+          curl -sf http://localhost:8080/metrics | grep ironpulse_readings_total
           docker compose logs
           docker compose down -v
