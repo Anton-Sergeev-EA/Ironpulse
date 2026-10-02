@@ -27,6 +27,12 @@ All notable changes to this project are documented here. The format follows
   history.
 - Benchmarks for the export path; 45 new tests (137 in total).
 
+- **Automatic deployment:** a `Deploy` workflow runs after CI succeeds on
+  `main` and, over SSH with a key restricted to one command, runs
+  `deploy/scripts/update.sh` on the server — fast-forward pull, rebuild,
+  health check and automatic rollback. Skipped until configured; see
+  `docs/auto-deploy.md`.
+
 ### Changed
 - Docker Compose rotates container logs (10 MB × 3 per service) instead of
   keeping them forever.

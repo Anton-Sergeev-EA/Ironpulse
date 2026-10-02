@@ -306,6 +306,9 @@ sudo ln -s /etc/nginx/sites-available/your-domain.tld /etc/nginx/sites-enabled/
 sudo nginx -t && sudo systemctl reload nginx
 ```
 
+### Automatic updates from GitHub.
+After every push to `main` that passes CI, GitHub Actions logs in to the server over SSH and runs [`deploy/scripts/update.sh`](deploy/scripts/update.sh): it pulls the code, rebuilds and restarts the containers, waits for `healthy` and rolls back to the previous version if the new one does not come up. It uses a dedicated SSH key that the server allows to run only this command. One-time setup, about 5 minutes: [`docs/auto-deploy.md`](docs/auto-deploy.md). By hand on the server: `deploy/scripts/update.sh`.
+
 ### Production checklist.
 - [ ] `IRONPULSE_API_TOKEN` is set (long and random: `openssl rand -hex 32`)
 - [ ] `IRONPULSE_BIND_HOST=127.0.0.1` if a reverse proxy sits in front (never expose the raw app port)

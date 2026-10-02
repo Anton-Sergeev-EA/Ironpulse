@@ -1,0 +1,79 @@
+# Deploys main to the VDS after CI has passed on it.
+#
+# The runner connects over SSH with a key that the server restricts to one
+# command (deploy/scripts/update.sh), so the key cannot be used for anything
+# else. Setup, including the required secrets, is in docs/auto-deploy.md.
+# Until the VDS_HOST secret exists the job skips itself, so forks and fresh
+# clones of this repository are unaffected.
+
+name: Deploy
+
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: Rebuild and restart even if the server is already up to date
+        type: boolean
+        default: false
+
+# Deployments run one after another, never in parallel; a newer one waits.
+concurrency:
+  group: deploy-vds
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    name: Deploy to VDS
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.workflow_run.conclusion == 'success' && github.event.workflow_run.event == 'push')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Check that deployment is configured
+        id: config
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+        run: |
+          if [ -z "$VDS_HOST" ]; then
+            echo "::notice::Secret VDS_HOST is not set — skipping deployment (see docs/auto-deploy.md)"
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run the update script on the server
+        if: steps.config.outputs.enabled == 'true'
+        env:
+          VDS_HOST: ${{ secrets.VDS_HOST }}
+          VDS_USER: ${{ secrets.VDS_USER }}
+          VDS_PORT: ${{ secrets.VDS_PORT }}
+          VDS_SSH_KEY: ${{ secrets.VDS_SSH_KEY }}
+          VDS_KNOWN_HOSTS: ${{ secrets.VDS_KNOWN_HOSTS }}
+          FORCE: ${{ inputs.force && 'force' || 'update' }}
+        run: |
+          install -m 700 -d ~/.ssh
+          printf '%s\n' "$VDS_SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # The server's host key is pinned, so the runner cannot be tricked
+          # into talking to an impostor.
+          printf '%s\n' "$VDS_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          # The server decides what runs (forced command); "force" or
+          # "update" is only passed along as a request.
+          ssh -i ~/.ssh/deploy_key \
+              -p "${VDS_PORT:-22}" \
+              -o BatchMode=yes \
+              -o StrictHostKeyChecking=yes \
+              -o ServerAliveInterval=30 \
+              "${VDS_USER:-root}@${VDS_HOST}" "$FORCE"
+
+      - name: Remove the key from the runner
+        if: always()
+        run: rm -f ~/.ssh/deploy_key
