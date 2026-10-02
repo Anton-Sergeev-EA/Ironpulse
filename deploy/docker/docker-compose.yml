@@ -17,8 +17,11 @@ services:
       context: ../../tools/modbus_simulator
       dockerfile: Dockerfile
     container_name: ironpulse-simulator
+    # Same bind address as ironpulse: with IRONPULSE_BIND_HOST=127.0.0.1 the
+    # simulator is not reachable from the internet either. ironpulse itself
+    # talks to it over the Compose network (simulator:5020), not this port.
     ports:
-      - "${SIMULATOR_PORT:-5020}:5020"
+      - "${IRONPULSE_BIND_HOST:-0.0.0.0}:${SIMULATOR_PORT:-5020}:5020"
     healthcheck:
       test: ["CMD", "python3", "-c", "import socket; socket.create_connection(('127.0.0.1', 5020), timeout=2)"]
       interval: 5s
