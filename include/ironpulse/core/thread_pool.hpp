@@ -7,6 +7,7 @@
 #include <queue>
 #include <stdexcept>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <vector>
 
@@ -42,8 +43,12 @@ public:
     auto submit(F&& f, Args&&... args) -> std::future<std::invoke_result_t<F, Args...>> {
         using ReturnType = std::invoke_result_t<F, Args...>;
 
+        // A lambda + std::apply instead of std::bind: libstdc++'s bind still
+        // goes through the deprecated std::result_of, which Clang reports.
         auto task = std::make_shared<std::packaged_task<ReturnType()>>(
-            std::bind(std::forward<F>(f), std::forward<Args>(args)...));
+            [fn = std::forward<F>(f), bound = std::make_tuple(std::forward<Args>(args)...)]() mutable {
+                return std::apply(std::move(fn), std::move(bound));
+            });
         std::future<ReturnType> result = task->get_future();
 
         {
