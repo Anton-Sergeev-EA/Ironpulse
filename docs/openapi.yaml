@@ -1,0 +1,282 @@
+openapi: 3.0.3
+info:
+  title: Ironpulse API
+  version: 1.0.0
+  description: |
+    REST API of the Ironpulse industrial telemetry engine.
+
+    **Authentication.** When the engine runs with an `api_token`, every
+    endpoint except `/healthz` and `/api/v1/config` requires
+    `Authorization: Bearer <token>` (or `?token=<token>` for clients that
+    cannot set headers). Without a token the API is open.
+
+    **Live data.** Readings, alerts and device status changes are pushed
+    over a WebSocket at `ws://<host>:<ws_port>/live`, or `/ws/live` behind
+    the bundled nginx. With a token: `/live?token=<token>`. Messages are
+    JSON objects with a `type` of `reading`, `anomaly` or `device_status`
+    (see the `Ws*` schemas below).
+  license:
+    name: MIT
+    url: https://github.com/Anton-Sergeev-EA/Ironpulse/blob/main/LICENSE
+
+servers:
+  - url: http://localhost:8080
+
+security:
+  - bearerAuth: []
+  - tokenQuery: []
+
+paths:
+  /api/v1/devices:
+    get:
+      summary: Configured devices and their connection status
+      operationId: listDevices
+      responses:
+        "200":
+          description: All configured devices
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Device" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/sensors:
+    get:
+      summary: Sensor metadata, limits and latest value
+      operationId: listSensors
+      responses:
+        "200":
+          description: All configured sensors, in configuration order
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Sensor" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/series/{sensor_id}:
+    get:
+      summary: A sensor's history
+      description: |
+        With persistence enabled the history covers the whole retention
+        period. JSON responses longer than 10,000 points are thinned
+        evenly; CSV responses are never thinned.
+      operationId: getSeries
+      parameters:
+        - name: sensor_id
+          in: path
+          required: true
+          schema: { type: string, pattern: "^[A-Za-z0-9_.-]{1,64}$" }
+        - name: since
+          in: query
+          description: How many seconds back from now.
+          schema: { type: integer, minimum: 1, maximum: 315360000, default: 300 }
+        - name: format
+          in: query
+          schema: { type: string, enum: [json, csv], default: json }
+      responses:
+        "200":
+          description: Samples, oldest first
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: "#/components/schemas/Sample" }
+            text/csv:
+              schema: { type: string }
+              example: |
+                timestamp,value
+                2026-10-02T06:54:09.749Z,65.48
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404":
+          description: Unknown sensor
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/Error" }
+
+  /api/v1/alerts:
+    get:
+      summary: Recent alerts, newest first
+      operationId: listAlerts
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 1000, default: 50 }
+      responses:
+        "200":
+          description: Recent alerts
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  allOf:
+                    - $ref: "#/components/schemas/Alert"
+                    - type: object
+                      properties:
+                        timestamp: { type: string, format: date-time }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /api/v1/config:
+    get:
+      summary: What a client needs to bootstrap (never requires a token)
+      operationId: getConfig
+      security: []
+      responses:
+        "200":
+          description: Bootstrap information
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [ws_port, ws_host, auth_required, version]
+                properties:
+                  ws_port: { type: integer, example: 8081 }
+                  ws_host: { type: string, example: localhost }
+                  auth_required: { type: boolean }
+                  version: { type: string, example: 1.0.0 }
+
+  /metrics:
+    get:
+      summary: Prometheus metrics (text exposition format 0.0.4)
+      operationId: getMetrics
+      responses:
+        "200":
+          description: Metrics
+          content:
+            text/plain:
+              schema: { type: string }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /healthz:
+    get:
+      summary: Liveness probe (never requires a token)
+      operationId: health
+      security: []
+      responses:
+        "200":
+          description: The engine is running
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, enum: [ok] }
+                  version: { type: string }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+    tokenQuery:
+      type: apiKey
+      in: query
+      name: token
+
+  responses:
+    Unauthorized:
+      description: A token is required and was missing or wrong
+      headers:
+        WWW-Authenticate:
+          schema: { type: string, example: Bearer }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+    BadRequest:
+      description: A query parameter is malformed or out of range
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/Error" }
+
+  schemas:
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error: { type: string, example: "parameter 'limit' must be an integer between 1 and 1000" }
+
+    Device:
+      type: object
+      required: [id, online, poll_interval_ms, sensors]
+      properties:
+        id: { type: string, example: transformer_01 }
+        online: { type: boolean, description: "false until the first poll has finished" }
+        poll_interval_ms: { type: integer, example: 1000 }
+        sensors:
+          type: array
+          items: { type: string }
+          example: [winding_temp, oil_temp]
+
+    Limits:
+      type: object
+      properties:
+        low: { type: number, nullable: true }
+        high: { type: number, nullable: true, example: 90 }
+
+    Sample:
+      type: object
+      required: [timestamp, value]
+      properties:
+        timestamp: { type: string, format: date-time }
+        value: { type: number, description: "In engineering units (scale and offset applied)" }
+
+    Sensor:
+      type: object
+      required: [id, name, unit, device_id, limits, latest]
+      properties:
+        id: { type: string, example: winding_temp }
+        name: { type: string, example: Winding temperature }
+        unit: { type: string, example: "°C" }
+        device_id: { type: string, example: transformer_01 }
+        limits: { $ref: "#/components/schemas/Limits" }
+        latest:
+          nullable: true
+          allOf:
+            - $ref: "#/components/schemas/Sample"
+
+    Alert:
+      type: object
+      required: [sensor_id, kind, severity, detector, message, value, confidence]
+      properties:
+        sensor_id: { type: string }
+        kind:
+          type: string
+          enum: [limit, statistical]
+          description: "limit: the value crossed a configured limit; statistical: a detector quorum agreed"
+        severity: { type: string, enum: [critical, warning] }
+        detector: { type: string, description: "'limit', or the voting detectors joined by '+'", example: zscore+ewma }
+        message: { type: string, description: "English summary; clients should build their own text from the fields" }
+        value: { type: number, description: The reading that raised the alert }
+        limit: { type: number, description: "Limit alerts only" }
+        direction: { type: string, enum: [high, low], description: "Limit alerts only" }
+        votes: { type: integer, description: "Statistical alerts: detectors that voted" }
+        detectors_total: { type: integer, description: "Statistical alerts: detectors configured" }
+        score: { type: number }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+
+    WsReading:
+      type: object
+      properties:
+        type: { type: string, enum: [reading] }
+        sensor_id: { type: string }
+        value: { type: number }
+        timestamp: { type: integer, description: Unix epoch milliseconds }
+
+    WsAnomaly:
+      allOf:
+        - $ref: "#/components/schemas/Alert"
+        - type: object
+          properties:
+            type: { type: string, enum: [anomaly] }
+            timestamp: { type: integer, description: Unix epoch milliseconds }
+
+    WsDeviceStatus:
+      type: object
+      properties:
+        type: { type: string, enum: [device_status] }
+        device_id: { type: string }
+        online: { type: boolean }

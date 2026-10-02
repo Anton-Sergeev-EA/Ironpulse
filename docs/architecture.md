@@ -5,50 +5,99 @@
 Ironpulse is a pipeline: **acquire → store → analyze → alert → serve**.
 
 ```
-┌─────────────┐   ┌──────────────┐   ┌────────────────┐   ┌─────────────┐
-│  protocol   │──▶│   storage    │──▶│   analytics     │──▶│     api      │
-│ Modbus TCP  │   │ RingBuffer/  │   │ ZScoreDetector  │   │ REST + WS    │
-│ client(s)   │   │ SeriesStore  │   │ (Strategy)      │   │ (+ web/ SPA) │
-└─────────────┘   └──────────────┘   └────────────────┘   └─────────────┘
+┌──────────────┐   ┌──────────────┐   ┌──────────────────┐   ┌──────────────┐
+│   protocol   │──▶│   storage    │   │    analytics     │──▶│    notify    │
+│ DevicePoller │   │ RingBuffer / │   │ RuleEngine:      │   │ Telegram,    │
+│ ModbusClient │   │ SeriesStore  │   │ limits + z-score/│   │ Slack,       │
+│ decoder      │   │ + WAL        │   │ EWMA/CUSUM quorum│   │ webhook      │
+└──────┬───────┘   └──────▲───────┘   └────────▲─────────┘   └──────────────┘
+       │                  │                    │
+       └──────────────────┴──── EventBus ──────┴──────────▶ api (REST, WebSocket,
+                                                            /metrics) → dashboard
 ```
 
-Each layer is an independent CMake target with its own unit tests, so it
-can be developed, tested, and benchmarked in isolation.
+Each layer is an independent CMake target (`ironpulse::core`, `::protocol`,
+`::storage`, `::analytics`, `::api`, `::notify`) with its own tests, so it can
+be developed, tested, and benchmarked in isolation. Layers never call each
+other directly: they publish and subscribe to events on `core::EventBus`
+(`SensorReadingEvent`, `AnomalyEvent`, `DeviceStatusEvent`, `PollErrorEvent`).
+`main.cpp` only wires subscriptions together.
+
+## Data flow
+
+1. **`protocol::DevicePoller`** — one per device — runs a fixed-rate cycle. At
+   startup `plan_reads()` groups the device's sensors into as few Modbus
+   requests as possible (≤ 125 registers each, bounded gaps, holding and input
+   tables kept apart). Each cycle sends those requests one after another (Modbus
+   TCP allows one outstanding request per connection), decodes every sensor's
+   registers (`decode_raw`: 16/32-bit integers and float32 in either word order,
+   then scale/offset), and publishes all readings with one shared timestamp.
+2. **Storage** appends each reading to its in-memory ring buffer and, with
+   persistence enabled, to the sensor's write-ahead log.
+3. **`analytics::RuleEngine`** checks the reading against the sensor's hard
+   limits (edge-triggered critical alerts) and feeds it to the sensor's
+   detectors (quorum-voted warning alerts), honouring a per-sensor cooldown.
+4. **Alerts** go to the bounded `AlertLog` (for the REST API), the WebSocket
+   broadcast, the metrics registry, and the **`notify::Notifier`** queue.
+5. **The API layer** serves the dashboard and integrations: REST for state and
+   history, a WebSocket for live push, `/metrics` for Prometheus.
 
 ## Concurrency model
 
 - A single `asio::io_context`, driven by a small fixed-size pool of threads
-  (`config.worker_threads`), runs all network I/O — one `ModbusClient` per
-  configured device, each polling on its own `asio::steady_timer`.
-- `SeriesStore` and its per-sensor `RingBuffer`s are mutex-protected and
-  safe to call from any of the io threads.
-- `AnomalyDetector` instances are *not* shared across threads — each
-  `DevicePoller` owns its own detector, since detection state (rolling
-  window) is inherently per-sensor and per-poller, avoiding the need for
-  synchronization there entirely.
+  (`config.worker_threads`), runs all network I/O: Modbus polling, the WebSocket
+  server and housekeeping timers.
+- Every `ModbusClient`, `DevicePoller` and `WsConnection` owns a **strand**, so
+  each object's handlers never run concurrently even though the pool has many
+  threads. Different devices and connections still proceed in parallel.
+- WebSocket broadcasts arrive from several polling strands at once; each
+  connection queues outgoing frames and keeps a single write in flight, since
+  overlapping `async_write` calls on one socket would interleave frames.
+- `SeriesStore`, `RingBuffer`, `WalWriter`, `RuleEngine`, `AlertLog`,
+  `DeviceRegistry` and `Metrics` are mutex-protected and safe to call from any
+  thread. `RuleEngine` publishes alerts *after* releasing its lock, so a
+  subscriber can never deadlock it.
+- The REST server (cpp-httplib) runs its own accept loop on a dedicated thread.
+- The notifier delivers on its own worker thread with a bounded queue, so a slow
+  or unreachable chat service never delays polling or alerting.
+
+## Failure handling
+
+- Every Modbus connect and request is bounded by `timeout_ms`. On timeout the
+  connection is closed and reopened on the next cycle; a timer that expires at
+  the same moment a response arrives is ignored via a generation counter.
+- A response with an unexpected transaction id or too few registers is treated
+  as a broken stream: the connection is reset rather than trusted.
+- A device that answers with a Modbus exception stays *online* (it is reachable;
+  its configuration is wrong) and the error is logged and counted.
+- Polling falls back to the next tick rather than bursting to catch up after a
+  slow cycle or reconnect.
+- Notification delivery retries server errors and timeouts with exponential
+  backoff; client errors (bad token, unknown chat) are not retried.
 
 ## Why not lock-free everywhere?
 
-Sensor update rates in this domain are sub-kHz per device. A mutex around
-a `RingBuffer::push` is not the bottleneck at that rate. Reaching for
-lock-free structures before profiling proves a need would trade
-readability for speculative performance — see `docs/adr/0002-storage-format.md`.
+Sensor update rates in this domain are sub-kHz per device. A mutex around a
+`RingBuffer::push` is not the bottleneck at that rate. Reaching for lock-free
+structures before profiling proves a need would trade readability for
+speculative performance — see `docs/adr/0002-storage-format.md`.
 
-## Extending the analytics layer
+## Extending
 
-`AnomalyDetector` is a small interface (see
-`include/ironpulse/analytics/detector.hpp`); adding EWMA or CUSUM means
-implementing the interface, no changes needed elsewhere. A `rule_engine`
-that combines multiple detectors' outputs per sensor before raising an
-alert is the next planned addition.
+- **A detection strategy:** implement `analytics::AnomalyDetector` (`observe`
+  and `name`), then add its type to `make_detector()` and to the config parser's
+  `parse_detector()`.
+- **A notification channel:** add a case to `notify::build_request()` (pure,
+  unit-testable) and accept the new `type` in the config parser.
+- **A dashboard language:** add `web/js/i18n/locales/<code>.js`, list it in
+  `web/js/i18n/i18n.js` and `index.html`, and add the notification texts to
+  `src/notify/messages.cpp`.
 
-## Known limitations (current milestone)
+## Known limitations
 
-- No automatic WAL compaction on startup — `RetentionPolicy::prune` must be
-  invoked periodically by the operator (or wired into a timer) rather than
-  running itself; the maintenance timer in `main.cpp` currently only
-  flushes the WAL, not prunes it.
-- Config loader only supports JSON, not YAML (despite YAML examples
-  referenced in early planning docs) — kept simple deliberately;
-  `nlohmann::json` was already a dependency, so a YAML parser was not
-  worth adding for the current milestone.
+- Modbus TCP only; serial Modbus RTU devices need a TCP gateway.
+- A single shared API token rather than per-user accounts and roles.
+- Alerts are not acknowledged by operators; the alert log keeps the last 500
+  in memory (history of the readings themselves is persisted).
+- Config loader only supports JSON, not YAML — `nlohmann::json` was already a
+  dependency, so a YAML parser was not worth adding.
