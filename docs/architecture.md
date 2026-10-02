@@ -2,7 +2,8 @@
 
 ## Overview
 
-Ironpulse is a pipeline: **acquire → store → analyze → alert → serve**.
+Ironpulse is a pipeline: **acquire → store → analyze → alert → serve**, with an
+optional **export** branch that streams every reading to files.
 
 ```
 ┌──────────────┐   ┌──────────────┐   ┌──────────────────┐   ┌──────────────┐
@@ -12,12 +13,16 @@ Ironpulse is a pipeline: **acquire → store → analyze → alert → serve**.
 │ decoder      │   │ + WAL        │   │ EWMA/CUSUM quorum│   │ webhook      │
 └──────┬───────┘   └──────▲───────┘   └────────▲─────────┘   └──────────────┘
        │                  │                    │
-       └──────────────────┴──── EventBus ──────┴──────────▶ api (REST, WebSocket,
-                                                            /metrics) → dashboard
+       ├──────────────────┴──── EventBus ──────┴──────────▶ api (REST, WebSocket,
+       │                                                    /metrics) → dashboard
+       │   ┌──────────────────────────────────────────┐
+       └──▶│ ingest (optional export)                 │
+           │ SPSC queue → Ingestor thread → segments  │──▶ export/*.ipseg
+           └──────────────────────────────────────────┘
 ```
 
 Each layer is an independent CMake target (`ironpulse::core`, `::protocol`,
-`::storage`, `::analytics`, `::api`, `::notify`) with its own tests, so it can
+`::storage`, `::ingest`, `::analytics`, `::api`, `::notify`) with its own tests, so it can
 be developed, tested, and benchmarked in isolation. Layers never call each
 other directly: they publish and subscribe to events on `core::EventBus`
 (`SensorReadingEvent`, `AnomalyEvent`, `DeviceStatusEvent`, `PollErrorEvent`).
@@ -41,6 +46,12 @@ other directly: they publish and subscribe to events on `core::EventBus`
    broadcast, the metrics registry, and the **`notify::Notifier`** queue.
 5. **The API layer** serves the dashboard and integrations: REST for state and
    history, a WebSocket for live push, `/metrics` for Prometheus.
+6. **Export** (when `export.enabled`): `ingest::ReadingExporter` maps the sensor
+   id to a numeric tag and pushes a 24-byte sample into a lock-free SPSC queue.
+   The `Ingestor` thread drains it into batches (by size or `flush_interval_ms`),
+   encodes each with a CRC-32C and `SegmentWriter` appends it to the current
+   segment file. Format: [`export-format.md`](export-format.md); design:
+   [ADR 0004](adr/0004-export-pipeline.md).
 
 ## Concurrency model
 
@@ -60,6 +71,11 @@ other directly: they publish and subscribe to events on `core::EventBus`
 - The REST server (cpp-httplib) runs its own accept loop on a dedicated thread.
 - The notifier delivers on its own worker thread with a bounded queue, so a slow
   or unreachable chat service never delays polling or alerting.
+- The export path follows the same rule for disk I/O: polling strands only push
+  into the SPSC queue (taking turns through a mutex held for a few nanoseconds,
+  never contended by the writer); encoding and file writes happen on the
+  `Ingestor` thread. A stalled disk drops export samples (counted), never
+  polling.
 
 ## Failure handling
 
@@ -82,6 +98,12 @@ Sensor update rates in this domain are sub-kHz per device. A mutex around a
 structures before profiling proves a need would trade readability for
 speculative performance — see `docs/adr/0002-storage-format.md`.
 
+The one lock-free structure, `ingest::SpscRingBuffer`, sits where it earns its
+place: at the hand-off from the polling strands to a thread doing file I/O, so
+that the writer never holds a lock the strands need. Measured on a 2-core VM
+(`tests/benchmarks/bench_ingest.cpp`): ~9 ns for an SPSC push+pop against ~32 ns
+for a mutex-guarded storage push, and ~240 M items/s between two threads.
+
 ## Extending
 
 - **A detection strategy:** implement `analytics::AnomalyDetector` (`observe`
@@ -89,6 +111,9 @@ speculative performance — see `docs/adr/0002-storage-format.md`.
   `parse_detector()`.
 - **A notification channel:** add a case to `notify::build_request()` (pure,
   unit-testable) and accept the new `type` in the config parser.
+- **An export consumer:** read `*.ipseg` files as described in
+  [`export-format.md`](export-format.md); `ironpulse-export dump` converts them
+  to CSV, `tools/export_reader/read_segment.py` is a dependency-free reader.
 - **A dashboard language:** add `web/js/i18n/locales/<code>.js`, list it in
   `web/js/i18n/i18n.js` and `index.html`, and add the notification texts to
   `src/notify/messages.cpp`.

@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · **Italiano**
 
@@ -258,6 +258,25 @@ scrape_configs:
     static_configs: [{ targets: ["ironpulse-host:8080"] }]
 ```
 
+## Esportazione del flusso di dati
+Oltre alla dashboard, Ironpulse può scrivere ogni lettura in file binari compatti — per un data lake, un historian, analisi offline o addestramento di modelli. La scrittura su disco avviene in un thread separato: un disco lento o pieno non rallenta mai l’interrogazione né gli allarmi — nel caso peggiore alcune letture mancano dall’esportazione, e le metriche lo mostrano.
+
+```json
+"export": { "enabled": true, "directory": "export", "segment_max_mb": 64 }
+```
+
+In Docker basta `EXPORT_ENABLED=true` in `.env`: i file compaiono nel volume dei dati, in `/app/data/export`.
+
+I file si chiamano `telemetry-<ora>-NNNNNN.ipseg`: 24 byte per lettura, un checksum CRC-32C per batch e l’elenco dei sensori dentro ogni file, che quindi si legge da solo, anche dopo una modifica della configurazione. Un file ancora in scrittura termina con `.part`: prelevate solo i `.ipseg` completati. Ironpulse non li cancella; la conservazione dei dati esportati spetta a voi.
+
+```bash
+ironpulse-export verify export/                       # verificare il CRC di ogni batch
+ironpulse-export dump export/ > readings.csv          # tutte le letture in CSV
+ironpulse-export dump --sensor winding_temp export/   # un solo sensore
+```
+
+Descrizione del formato: [`docs/export-format.md`](docs/export-format.md); lettore Python senza dipendenze: [`tools/export_reader/read_segment.py`](tools/export_reader/read_segment.py); metriche: `ironpulse_export_*` in `/metrics`.
+
 ## Opzioni di deployment
 
 | Scenario | Istruzioni |
@@ -353,7 +372,7 @@ storage (ring buffer + WAL)  analytics (limiti,     api (REST, WebSocket,  metri
                                      ▼
                              notify (Telegram, Slack, webhook)
 ```
-Ogni livello (`core`, `protocol`, `storage`, `analytics`, `api`, `notify`) è un target CMake indipendente con i propri test. I livelli comunicano tramite l’`EventBus`, non direttamente. Vedi [`docs/architecture.md`](docs/architecture.md) per il modello di concorrenza e [`docs/adr/`](docs/adr/) per le singole decisioni.
+Ogni livello (`core`, `protocol`, `storage`, `ingest`, `analytics`, `api`, `notify`) è un target CMake indipendente con i propri test. I livelli comunicano tramite l’`EventBus`, non direttamente. Vedi [`docs/architecture.md`](docs/architecture.md) per il modello di concorrenza e [`docs/adr/`](docs/adr/) per le singole decisioni.
 
 ### Riferimento API
 Contratto completo: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — aprilo in Swagger UI o importalo in Postman).
@@ -372,7 +391,7 @@ Contratto completo: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — apri
 
 ### Pratiche di ingegneria
 - Avvisi del compilatore rigorosi (`-Wall -Wextra -Wpedantic -Wconversion ...`) e compilazione senza un solo avviso; facoltativamente come errori (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 92 test: unit test di ogni componente, test dell’API HTTP e dell’handshake WebSocket su socket reali, test end-to-end con un falso dispositivo Modbus via TCP (decodifica, limiti, timeout, perdita e ripristino della comunicazione). Tutti verdi con AddressSanitizer/UBSan e ThreadSanitizer
+- 131 test: unit test di ogni componente, test dell’API HTTP e dell’handshake WebSocket su socket reali, test end-to-end con un falso dispositivo Modbus via TCP (decodifica, limiti, timeout, perdita e ripristino della comunicazione). Tutti verdi con AddressSanitizer/UBSan e ThreadSanitizer
 - CI: GCC e Clang, sanitizer, `clang-format`, `ruff` per il simulatore, completezza delle traduzioni, build Docker e uno smoke test con Compose che verifica i dati in tempo reale — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Rilasci tramite tag: immagini compilate nativamente per amd64 e arm64 e pubblicate su GitHub Container Registry — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Build Docker multi-stage, utente non privilegiato nel container, controlli di stato su ogni servizio
@@ -392,6 +411,7 @@ Contratto completo: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — apri
 - [x] Limiti fissi, gravità degli allarmi, tempo di silenzio
 - [x] Notifiche: Telegram, Slack, webhook — in 8 lingue
 - [x] Accesso con token, metriche Prometheus, esportazione CSV
+- [x] Esportazione di tutte le letture in file con CRC (modulo `ingest`, ex apollonian_core_ingestor)
 - [ ] Modbus RTU (RS-485) diretto, senza gateway
 - [ ] OPC UA e MQTT come sorgenti dati
 - [ ] Presa in carico degli allarmi da parte degli operatori e registro di audit

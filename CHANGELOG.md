@@ -4,6 +4,33 @@ All notable changes to this project are documented here. The format follows
 [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the project uses
 [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- **Export of every reading to files** (`export` config section, off by default;
+  `EXPORT_ENABLED` in Docker). Readings are batched into compact, self-describing
+  segment files (`*.ipseg`, 24 bytes per reading, CRC-32C per batch, the sensor
+  list inside every file) for a data lake, historian or offline analysis. Disk
+  I/O runs on its own thread behind a lock-free queue, so a slow disk can never
+  delay polling or alerts. Format: `docs/export-format.md`; design: ADR 0004.
+- `ironpulse-export` command-line tool: `verify`, `tags`, `dump` (CSV), also
+  included in the Docker image; a dependency-free Python reader in
+  `tools/export_reader/`.
+- `ironpulse_export_*` metrics (readings, drops, batches, I/O errors, bytes,
+  segments, queue depth) and a log warning when export readings are dropped.
+- The `ingest` module: the lock-free SPSC queue, batch serializer and batching
+  consumer of the former apollonian_core_ingestor project, merged with its
+  history.
+- Benchmarks for the export path; 39 new tests (131 in total).
+
+### Fixed (in the imported ingestor code)
+- The hardware (SSE4.2) and software CRC paths used different polynomials, so a
+  batch written on one machine could fail verification on another.
+- Samples followed a 12-byte header and were read through a misaligned pointer;
+  the header is now 16 bytes and samples are 8-byte aligned.
+- The queue ignored its configured capacity and always allocated 24 MB; an idle
+  consumer woke 10 000 times a second; a throwing sink terminated the process.
+
 ## [1.0.0] - 2026-10-02
 
 ### Added

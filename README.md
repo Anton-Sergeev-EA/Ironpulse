@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#языки-интерфейса)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
 
 **Русский** · [English](README.en.md) · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -255,6 +255,25 @@ scrape_configs:
     static_configs: [{ targets: ["ironpulse-host:8080"] }]
 ```
 
+## Выгрузка потока данных.
+Кроме дашборда, Ironpulse может записывать каждое показание в компактные двоичные файлы — для озера данных, исторического архива (historian), офлайн-анализа или обучения моделей. Запись на диск идёт в отдельном потоке: медленный или заполненный диск никогда не задержит опрос и алерты — в худшем случае часть показаний не попадёт в выгрузку, и это будет видно в метриках.
+
+```json
+"export": { "enabled": true, "directory": "export", "segment_max_mb": 64 }
+```
+
+В Docker достаточно `EXPORT_ENABLED=true` в `.env` — файлы появятся в томе данных, в `/app/data/export`.
+
+Файлы `telemetry-<время>-NNNNNN.ipseg`: 24 байта на показание, контрольная сумма CRC-32C на каждый пакет и список датчиков внутри каждого файла, поэтому файл читается сам по себе, даже после изменения конфигурации. Файл, который ещё пишется, заканчивается на `.part` — забирайте только готовые `.ipseg`. Ironpulse их не удаляет: хранение выгрузки — на вашей стороне.
+
+```bash
+ironpulse-export verify export/                       # проверить CRC каждого пакета
+ironpulse-export dump export/ > readings.csv          # все показания в CSV
+ironpulse-export dump --sensor winding_temp export/   # только один датчик
+```
+
+Описание формата — [`docs/export-format.md`](docs/export-format.md), читатель на Python без зависимостей — [`tools/export_reader/read_segment.py`](tools/export_reader/read_segment.py), метрики — `ironpulse_export_*` в `/metrics`.
+
 ## Варианты развёртывания.
 Выберите то, что соответствует вашей ситуации:
 
@@ -373,7 +392,7 @@ Modbus TCP устройства → protocol (опрос, декодирован
                                  notify (Telegram, Slack, webhook)
 ```
 
-Каждый слой (`core`, `protocol`, `storage`, `analytics`, `api`, `notify`) — независимый CMake-таргет со своими тестами, поэтому его можно собирать, тестировать и бенчить изолированно. Слои общаются через `EventBus`, а не напрямую. См. [`docs/architecture.md`](docs/architecture.md) для модели конкурентности и обоснования решений, и [`docs/adr/`](docs/adr/) для конкретных решений (почему Asio, почему WAL, почему конфигурация через env-переменные).
+Каждый слой (`core`, `protocol`, `storage`, `ingest`, `analytics`, `api`, `notify`) — независимый CMake-таргет со своими тестами, поэтому его можно собирать, тестировать и бенчить изолированно. Слои общаются через `EventBus`, а не напрямую. См. [`docs/architecture.md`](docs/architecture.md) для модели конкурентности и обоснования решений, и [`docs/adr/`](docs/adr/) для конкретных решений (почему Asio, почему WAL, почему конфигурация через env-переменные).
 
 ```
 include/ironpulse/        Публичные заголовки, по подкаталогу на слой
@@ -406,7 +425,7 @@ docs/                     Архитектура, OpenAPI, ADR
 
 ### Инженерные практики.
 - Строгие предупреждения компилятора (`-Wall -Wextra -Wpedantic -Wconversion ...`), сборка без единого предупреждения; опционально — как ошибки (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 92 теста: unit-тесты каждого компонента, тесты HTTP API и WebSocket-рукопожатия на реальных сокетах, сквозные тесты с поддельным Modbus-устройством по TCP (декодирование, пределы, тайм-ауты, потеря и восстановление связи). Все зелёные под AddressSanitizer/UndefinedBehaviorSanitizer и ThreadSanitizer
+- 131 тест: unit-тесты каждого компонента, тесты HTTP API и WebSocket-рукопожатия на реальных сокетах, сквозные тесты с поддельным Modbus-устройством по TCP (декодирование, пределы, тайм-ауты, потеря и восстановление связи). Все зелёные под AddressSanitizer/UndefinedBehaviorSanitizer и ThreadSanitizer
 - CI-матрица по GCC и Clang, санитайзеры, `clang-format`, `ruff` для симулятора, проверка полноты переводов, сборка Docker и smoke-тест Compose с проверкой живых данных — всё в [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Релизы по тегу: нативная сборка образов под amd64 и arm64 и публикация в GitHub Container Registry — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Многостадийная сборка Docker (тулчейн компилятора никогда не попадает в runtime-образ), непривилегированный пользователь контейнера, health check на каждом сервисе, чистый build-контекст через `.dockerignore`
@@ -426,6 +445,7 @@ docs/                     Архитектура, OpenAPI, ADR
 - [x] Жёсткие пределы, критичность алертов, интервал тишины
 - [x] Уведомления: Telegram, Slack, webhook — на 8 языках
 - [x] Доступ по токену, метрики Prometheus, экспорт CSV
+- [x] Выгрузка всех показаний в файлы с CRC (модуль `ingest`, бывший apollonian_core_ingestor)
 - [ ] Modbus RTU (RS-485) напрямую, без шлюза
 - [ ] OPC UA и MQTT как источники данных
 - [ ] Подтверждение (квитирование) алертов операторами и журнал действий

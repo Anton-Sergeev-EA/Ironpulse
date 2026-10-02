@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
 
 [Русский](README.md) · **English** · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -254,6 +254,25 @@ scrape_configs:
     static_configs: [{ targets: ["ironpulse-host:8080"] }]
 ```
 
+## Exporting the data stream.
+Besides the dashboard, Ironpulse can write every reading to compact binary files — for a data lake, a historian, offline analysis or model training. Disk writes happen on a separate thread: a slow or full disk never delays polling or alerts — at worst some readings miss the export, and the metrics show it.
+
+```json
+"export": { "enabled": true, "directory": "export", "segment_max_mb": 64 }
+```
+
+In Docker, set `EXPORT_ENABLED=true` in `.env` — files appear in the data volume under `/app/data/export`.
+
+Files are named `telemetry-<time>-NNNNNN.ipseg`: 24 bytes per reading, a CRC-32C checksum per batch and the sensor list inside every file, so a file can be read on its own, even after the configuration has changed. A file still being written ends in `.part` — pick up only finished `.ipseg` files. Ironpulse does not delete them: retention of exported data is up to you.
+
+```bash
+ironpulse-export verify export/                       # check every batch's CRC
+ironpulse-export dump export/ > readings.csv          # all readings as CSV
+ironpulse-export dump --sensor winding_temp export/   # one sensor only
+```
+
+Format description: [`docs/export-format.md`](docs/export-format.md); a dependency-free Python reader: [`tools/export_reader/read_segment.py`](tools/export_reader/read_segment.py); metrics: `ironpulse_export_*` in `/metrics`.
+
 ## Deployment options.
 
 | Scenario | Instructions |
@@ -345,7 +364,7 @@ storage (ring buffer + WAL)  analytics (limits,     api (REST, WebSocket,  metri
                                      ▼
                              notify (Telegram, Slack, webhook)
 ```
-Each layer (`core`, `protocol`, `storage`, `analytics`, `api`, `notify`) is an independent CMake target with its own tests. Layers talk through the `EventBus`, not directly. See [`docs/architecture.md`](docs/architecture.md) for the concurrency model and [`docs/adr/`](docs/adr/) for individual decisions.
+Each layer (`core`, `protocol`, `storage`, `ingest`, `analytics`, `api`, `notify`) is an independent CMake target with its own tests. Layers talk through the `EventBus`, not directly. See [`docs/architecture.md`](docs/architecture.md) for the concurrency model and [`docs/adr/`](docs/adr/) for individual decisions.
 
 ### API reference.
 Full contract: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — open it in Swagger UI or import it into Postman).
@@ -364,7 +383,7 @@ Full contract: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — open it i
 
 ### Engineering practices.
 - Strict compiler warnings (`-Wall -Wextra -Wpedantic -Wconversion ...`), a warning-free build; optionally as errors (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 92 tests: unit tests for every component, HTTP API and WebSocket handshake tests on real sockets, end-to-end tests with a fake Modbus device over TCP (decoding, limits, timeouts, outage and recovery). All green under AddressSanitizer/UBSan and ThreadSanitizer
+- 131 tests: unit tests for every component, HTTP API and WebSocket handshake tests on real sockets, end-to-end tests with a fake Modbus device over TCP (decoding, limits, timeouts, outage and recovery). All green under AddressSanitizer/UBSan and ThreadSanitizer
 - CI: GCC and Clang, sanitizers, `clang-format`, `ruff` for the simulator, translation completeness, Docker build and a Compose smoke test that checks live data — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Tag-driven releases: native amd64 and arm64 image builds published to GitHub Container Registry — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Multi-stage Docker build, unprivileged container user, health checks on every service
@@ -384,6 +403,7 @@ Full contract: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — open it i
 - [x] Hard limits, alert severity, cooldown
 - [x] Notifications: Telegram, Slack, webhook — in 8 languages
 - [x] Token access, Prometheus metrics, CSV export
+- [x] Export of every reading to CRC-checked files (`ingest` module, formerly apollonian_core_ingestor)
 - [ ] Modbus RTU (RS-485) directly, without a gateway
 - [ ] OPC UA and MQTT as data sources
 - [ ] Alert acknowledgement by operators and an audit log

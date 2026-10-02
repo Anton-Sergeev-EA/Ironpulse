@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · **中文** · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -258,6 +258,25 @@ scrape_configs:
     static_configs: [{ targets: ["ironpulse-host:8080"] }]
 ```
 
+## 导出数据流
+除了仪表盘，Ironpulse 还可以把每一条读数写入紧凑的二进制文件，用于数据湖、历史数据库（historian）、离线分析或模型训练。磁盘写入在独立线程中进行：磁盘慢或写满时绝不会拖慢轮询和告警——最坏情况下部分读数未进入导出，并会在指标中体现。
+
+```json
+"export": { "enabled": true, "directory": "export", "segment_max_mb": 64 }
+```
+
+在 Docker 中，只需在 `.env` 中设置 `EXPORT_ENABLED=true`，文件会出现在数据卷的 `/app/data/export` 中。
+
+文件名为 `telemetry-<时间>-NNNNNN.ipseg`：每条读数 24 字节，每个批次带 CRC-32C 校验，且每个文件内都含有传感器列表，因此即使配置已更改，文件也能独立读取。正在写入的文件以 `.part` 结尾——只取已完成的 `.ipseg` 文件。Ironpulse 不会删除它们，导出数据的保留由您自行负责。
+
+```bash
+ironpulse-export verify export/                       # 校验每个批次的 CRC
+ironpulse-export dump export/ > readings.csv          # 全部读数导出为 CSV
+ironpulse-export dump --sensor winding_temp export/   # 仅一个传感器
+```
+
+格式说明：[`docs/export-format.md`](docs/export-format.md)；无依赖的 Python 读取器：[`tools/export_reader/read_segment.py`](tools/export_reader/read_segment.py)；指标：`/metrics` 中的 `ironpulse_export_*`。
+
 ## 部署方式
 
 | 场景 | 说明 |
@@ -353,7 +372,7 @@ storage（环形缓冲 + WAL）   analytics（限值、       api（REST、WebSo
                                      ▼
                              notify（Telegram、Slack、webhook）
 ```
-每一层（`core`、`protocol`、`storage`、`analytics`、`api`、`notify`）都是独立的 CMake 目标，带有各自的测试。各层通过 `EventBus` 通信，而不是直接调用。并发模型参见 [`docs/architecture.md`](docs/architecture.md)，具体决策参见 [`docs/adr/`](docs/adr/)。
+每一层（`core`、`protocol`、`storage`、`ingest`、`analytics`、`api`、`notify`）都是独立的 CMake 目标，带有各自的测试。各层通过 `EventBus` 通信，而不是直接调用。并发模型参见 [`docs/architecture.md`](docs/architecture.md)，具体决策参见 [`docs/adr/`](docs/adr/)。
 
 ### API 参考
 完整规范：[`docs/openapi.yaml`](docs/openapi.yaml)（OpenAPI 3——可在 Swagger UI 中打开或导入 Postman）。
@@ -372,7 +391,7 @@ storage（环形缓冲 + WAL）   analytics（限值、       api（REST、WebSo
 
 ### 工程实践
 - 严格的编译器警告（`-Wall -Wextra -Wpedantic -Wconversion ...`），零警告构建；可选择将警告视为错误（`IRONPULSE_WARNINGS_AS_ERRORS`）
-- 92 个测试：每个组件的单元测试、基于真实套接字的 HTTP API 和 WebSocket 握手测试、通过 TCP 连接模拟 Modbus 设备的端到端测试（解码、限值、超时、失联与恢复）。在 AddressSanitizer/UBSan 和 ThreadSanitizer 下全部通过
+- 131 个测试：每个组件的单元测试、基于真实套接字的 HTTP API 和 WebSocket 握手测试、通过 TCP 连接模拟 Modbus 设备的端到端测试（解码、限值、超时、失联与恢复）。在 AddressSanitizer/UBSan 和 ThreadSanitizer 下全部通过
 - CI：GCC 和 Clang、Sanitizer、`clang-format`、模拟器的 `ruff`、翻译完整性检查、Docker 构建，以及检查实时数据的 Compose 冒烟测试——[`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - 基于标签的发布：在 amd64 和 arm64 上原生构建镜像并发布到 GitHub Container Registry——[`.github/workflows/release.yml`](.github/workflows/release.yml)
 - 多阶段 Docker 构建、容器内非特权用户、每个服务都有健康检查
@@ -392,6 +411,7 @@ storage（环形缓冲 + WAL）   analytics（限值、       api（REST、WebSo
 - [x] 硬限值、告警严重级别、冷却时间
 - [x] 通知：Telegram、Slack、webhook——8 种语言
 - [x] 令牌访问、Prometheus 指标、CSV 导出
+- [x] 将全部读数导出为带 CRC 校验的文件（`ingest` 模块，原 apollonian_core_ingestor）
 - [ ] 直接支持 Modbus RTU（RS-485），无需网关
 - [ ] 以 OPC UA 和 MQTT 作为数据源
 - [ ] 操作员确认告警及审计日志

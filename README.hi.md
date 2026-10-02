@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-92%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · [中文](README.zh.md) · **हिन्दी** · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -258,6 +258,25 @@ scrape_configs:
     static_configs: [{ targets: ["ironpulse-host:8080"] }]
 ```
 
+## डेटा स्ट्रीम का निर्यात
+डैशबोर्ड के अलावा, Ironpulse हर रीडिंग को छोटी बाइनरी फ़ाइलों में लिख सकता है — डेटा लेक, हिस्टोरियन, ऑफ़लाइन विश्लेषण या मॉडल प्रशिक्षण के लिए। डिस्क पर लिखना एक अलग थ्रेड में होता है: धीमी या भरी हुई डिस्क कभी भी पोलिंग और अलर्ट को नहीं रोकती — सबसे बुरी स्थिति में कुछ रीडिंग निर्यात में नहीं जातीं, और यह मेट्रिक्स में दिखता है।
+
+```json
+"export": { "enabled": true, "directory": "export", "segment_max_mb": 64 }
+```
+
+Docker में `.env` में `EXPORT_ENABLED=true` सेट करें — फ़ाइलें डेटा वॉल्यूम में `/app/data/export` में आएँगी।
+
+फ़ाइलों के नाम `telemetry-<समय>-NNNNNN.ipseg` होते हैं: प्रति रीडिंग 24 बाइट, हर बैच पर CRC-32C चेकसम, और हर फ़ाइल के अंदर सेंसरों की सूची, इसलिए कॉन्फ़िगरेशन बदलने के बाद भी फ़ाइल अपने-आप पढ़ी जा सकती है। जो फ़ाइल अभी लिखी जा रही है उसके अंत में `.part` होता है — केवल तैयार `.ipseg` फ़ाइलें लें। Ironpulse उन्हें नहीं हटाता: निर्यात डेटा को कितने समय रखना है, यह आप तय करते हैं।
+
+```bash
+ironpulse-export verify export/                       # हर बैच का CRC जाँचें
+ironpulse-export dump export/ > readings.csv          # सभी रीडिंग CSV में
+ironpulse-export dump --sensor winding_temp export/   # केवल एक सेंसर
+```
+
+फ़ॉर्मेट का विवरण: [`docs/export-format.md`](docs/export-format.md); बिना निर्भरता वाला Python रीडर: [`tools/export_reader/read_segment.py`](tools/export_reader/read_segment.py); मेट्रिक्स: `/metrics` में `ironpulse_export_*`।
+
 ## डिप्लॉयमेंट के विकल्प
 
 | स्थिति | निर्देश |
@@ -353,7 +372,7 @@ storage (ring buffer + WAL)  analytics (सीमाएँ,      api (REST, WebS
                                      ▼
                              notify (Telegram, Slack, webhook)
 ```
-हर परत (`core`, `protocol`, `storage`, `analytics`, `api`, `notify`) अपने टेस्ट के साथ एक स्वतंत्र CMake लक्ष्य है। परतें सीधे नहीं, बल्कि `EventBus` के माध्यम से बात करती हैं। समवर्तिता मॉडल के लिए [`docs/architecture.md`](docs/architecture.md) और अलग-अलग निर्णयों के लिए [`docs/adr/`](docs/adr/) देखें।
+हर परत (`core`, `protocol`, `storage`, `ingest`, `analytics`, `api`, `notify`) अपने टेस्ट के साथ एक स्वतंत्र CMake लक्ष्य है। परतें सीधे नहीं, बल्कि `EventBus` के माध्यम से बात करती हैं। समवर्तिता मॉडल के लिए [`docs/architecture.md`](docs/architecture.md) और अलग-अलग निर्णयों के लिए [`docs/adr/`](docs/adr/) देखें।
 
 ### API संदर्भ
 पूरा विवरण: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — Swagger UI में खोलें या Postman में आयात करें)।
@@ -372,7 +391,7 @@ storage (ring buffer + WAL)  analytics (सीमाएँ,      api (REST, WebS
 
 ### इंजीनियरिंग प्रथाएँ
 - सख़्त कंपाइलर चेतावनियाँ (`-Wall -Wextra -Wpedantic -Wconversion ...`), बिना एक भी चेतावनी का बिल्ड; वैकल्पिक रूप से त्रुटि के रूप में (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 92 टेस्ट: हर घटक के यूनिट टेस्ट, वास्तविक सॉकेट पर HTTP API और WebSocket हैंडशेक टेस्ट, TCP पर नकली Modbus डिवाइस के साथ एंड-टू-एंड टेस्ट (डिकोडिंग, सीमाएँ, टाइमआउट, संपर्क टूटना और बहाली)। AddressSanitizer/UBSan और ThreadSanitizer के तहत सभी हरे
+- 131 टेस्ट: हर घटक के यूनिट टेस्ट, वास्तविक सॉकेट पर HTTP API और WebSocket हैंडशेक टेस्ट, TCP पर नकली Modbus डिवाइस के साथ एंड-टू-एंड टेस्ट (डिकोडिंग, सीमाएँ, टाइमआउट, संपर्क टूटना और बहाली)। AddressSanitizer/UBSan और ThreadSanitizer के तहत सभी हरे
 - CI: GCC और Clang, सैनिटाइज़र, `clang-format`, सिम्युलेटर के लिए `ruff`, अनुवादों की पूर्णता की जाँच, Docker बिल्ड और लाइव डेटा जाँचने वाला Compose स्मोक टेस्ट — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - टैग से रिलीज़: amd64 और arm64 पर नेटिव इमेज बिल्ड और GitHub Container Registry में प्रकाशन — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - मल्टी-स्टेज Docker बिल्ड, कंटेनर में बिना विशेषाधिकार वाला उपयोगकर्ता, हर सेवा पर हेल्थ-चेक
@@ -392,6 +411,7 @@ storage (ring buffer + WAL)  analytics (सीमाएँ,      api (REST, WebS
 - [x] सख़्त सीमाएँ, अलर्ट की गंभीरता, कूलडाउन
 - [x] सूचनाएँ: Telegram, Slack, webhook — 8 भाषाओं में
 - [x] टोकन पहुँच, Prometheus मेट्रिक्स, CSV निर्यात
+- [x] हर रीडिंग का CRC-जाँची गई फ़ाइलों में निर्यात (`ingest` मॉड्यूल, पहले apollonian_core_ingestor)
 - [ ] गेटवे के बिना सीधे Modbus RTU (RS-485)
 - [ ] डेटा स्रोत के रूप में OPC UA और MQTT
 - [ ] ऑपरेटरों द्वारा अलर्ट की पुष्टि और ऑडिट लॉग
