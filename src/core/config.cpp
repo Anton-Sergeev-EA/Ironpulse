@@ -404,6 +404,25 @@ void apply_env_overrides(AppConfig& cfg) {
         c.url = *url;
         cfg.notifications.channels.push_back(std::move(c));
     }
+    if (auto v = env("IRONPULSE_EXPORT_ENABLED"))
+        cfg.export_config.enabled = parse_or<bool>(v, cfg.export_config.enabled);
+    if (auto v = env("IRONPULSE_EXPORT_DIR"))
+        cfg.export_config.directory = *v;
+}
+
+ExportConfig parse_export(const json& j) {
+    const std::string path = "export";
+    if (!j.is_object()) {
+        fail(path, "expected an object");
+    }
+    ExportConfig e;
+    e.enabled = get_bool(j, "enabled", e.enabled, path);
+    e.directory = get_string(j, "directory", e.directory, path);
+    e.queue_capacity = get_int<std::size_t>(j, "queue_capacity", e.queue_capacity, path, 16, 1U << 24);
+    e.batch_size = get_int<std::size_t>(j, "batch_size", e.batch_size, path, 1, 1U << 20);
+    e.flush_interval_ms = get_int<std::uint32_t>(j, "flush_interval_ms", e.flush_interval_ms, path, 10, 3'600'000);
+    e.segment_max_mb = get_int<std::uint32_t>(j, "segment_max_mb", e.segment_max_mb, path, 1, 65536);
+    return e;
 }
 
 void validate(AppConfig& cfg) {
@@ -443,6 +462,17 @@ void validate(AppConfig& cfg) {
         fail("notifications.language",
              "unsupported language '" + cfg.notifications.language +
                  "' (expected ru, en, zh, hi, es, fr, de or it)");
+    }
+
+    const auto& exp = cfg.export_config;
+    if ((exp.queue_capacity & (exp.queue_capacity - 1)) != 0) {
+        fail("export.queue_capacity", "must be a power of two (e.g. 4096, 65536)");
+    }
+    if (exp.batch_size > exp.queue_capacity) {
+        fail("export.batch_size", "must not exceed export.queue_capacity");
+    }
+    if (exp.enabled && exp.directory.empty()) {
+        fail("export.directory", "must not be empty when export is enabled");
     }
 
     // A channel whose credentials come from an unset environment variable
@@ -511,6 +541,10 @@ AppConfig parse(const json& j) {
                     parse_channel(list[i], "notifications.channels[" + std::to_string(i) + "]"));
             }
         }
+    }
+
+    if (j.contains("export")) {
+        cfg.export_config = parse_export(j.at("export"));
     }
 
     apply_env_overrides(cfg);

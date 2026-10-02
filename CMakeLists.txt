@@ -50,6 +50,7 @@ ironpulse_enable_sanitizers(ironpulse_options)
 add_subdirectory(src/core)
 add_subdirectory(src/protocol)
 add_subdirectory(src/storage)
+add_subdirectory(src/ingest)
 add_subdirectory(src/analytics)
 add_subdirectory(src/api)
 add_subdirectory(src/notify)
@@ -61,6 +62,7 @@ target_link_libraries(ironpulse
         ironpulse::core
         ironpulse::protocol
         ironpulse::storage
+        ironpulse::ingest
         ironpulse::analytics
         ironpulse::api
         ironpulse::notify

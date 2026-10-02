@@ -22,6 +22,7 @@
 #include "ironpulse/core/events.hpp"
 #include "ironpulse/core/logger.hpp"
 #include "ironpulse/core/metrics.hpp"
+#include "ironpulse/ingest/reading_exporter.hpp"
 #include "ironpulse/notify/notifier.hpp"
 #include "ironpulse/protocol/device_poller.hpp"
 #include "ironpulse/storage/series_store.hpp"
@@ -90,6 +91,36 @@ void describe_metrics(ironpulse::core::Metrics& metrics) {
     metrics.describe("ironpulse_websocket_clients", Type::gauge, "Connected dashboard WebSocket clients.");
     metrics.describe(
         "ironpulse_notifications_total", Type::counter, "Notification deliveries by channel and result.");
+    metrics.describe("ironpulse_export_readings_total", Type::counter, "Readings queued for export.");
+    metrics.describe(
+        "ironpulse_export_dropped_total", Type::counter, "Readings not exported because the queue was full.");
+    metrics.describe("ironpulse_export_batches_total", Type::counter, "Export batches written to disk.");
+    metrics.describe(
+        "ironpulse_export_batch_errors_total", Type::counter, "Export batches lost to an I/O error.");
+    metrics.describe("ironpulse_export_bytes_total", Type::counter, "Bytes written to export segments.");
+    metrics.describe("ironpulse_export_segments_total", Type::counter, "Export segment files completed.");
+    metrics.describe("ironpulse_export_queue_depth", Type::gauge, "Readings waiting to be exported.");
+}
+
+/// Copies the exporter's counters into the Prometheus registry and warns
+/// once per housekeeping tick if readings were dropped since the last one.
+void publish_export_stats(const ironpulse::ingest::ReadingExporter& exporter,
+                          ironpulse::core::Metrics& metrics,
+                          std::uint64_t& last_dropped) {
+    const auto stats = exporter.stats();
+    metrics.set("ironpulse_export_readings_total", static_cast<double>(stats.accepted));
+    metrics.set("ironpulse_export_dropped_total", static_cast<double>(stats.dropped));
+    metrics.set("ironpulse_export_batches_total", static_cast<double>(stats.batches_written));
+    metrics.set("ironpulse_export_batch_errors_total", static_cast<double>(stats.batches_failed));
+    metrics.set("ironpulse_export_bytes_total", static_cast<double>(stats.bytes_written));
+    metrics.set("ironpulse_export_segments_total", static_cast<double>(stats.segments_completed));
+    metrics.set("ironpulse_export_queue_depth", static_cast<double>(stats.queue_depth));
+    if (stats.dropped > last_dropped) {
+        IP_LOG_WARN("Export: {} reading(s) dropped — the disk is not keeping up; "
+                    "raise export.queue_capacity or check the export directory",
+                    stats.dropped - last_dropped);
+        last_dropped = stats.dropped;
+    }
 }
 
 }  // namespace
@@ -151,6 +182,27 @@ int main(int argc, char** argv) {
     const auto retention = std::chrono::hours(config.retention_hours);
     ironpulse::storage::SeriesStore store(/*buffer_capacity_per_series=*/4096, wal, retention);
 
+    std::unique_ptr<ironpulse::ingest::ReadingExporter> exporter;
+    if (config.export_config.enabled) {
+        try {
+            exporter = std::make_unique<ironpulse::ingest::ReadingExporter>(
+                config.export_config, ironpulse::ingest::tags_from_devices(config.devices));
+        } catch (const std::exception& e) {
+            IP_LOG_CRITICAL("Cannot start export to '{}': {}", config.export_config.directory, e.what());
+            return 1;
+        }
+        if (exporter->recovered_segments() > 0) {
+            IP_LOG_WARN("Export: finalised {} segment(s) left unfinished by a previous crash",
+                        exporter->recovered_segments());
+        }
+        exporter->start();
+        IP_LOG_INFO("Export enabled: {} (batch {} readings / {} ms, segments up to {} MB)",
+                    config.export_config.directory,
+                    config.export_config.batch_size,
+                    config.export_config.flush_interval_ms,
+                    config.export_config.segment_max_mb);
+    }
+
     ironpulse::analytics::RuleEngine rule_engine(bus);
     std::map<std::string, ironpulse::notify::SensorInfo> sensor_info;
     std::map<std::string, std::string> sensor_unit;
@@ -175,6 +227,9 @@ int main(int argc, char** argv) {
     bus.subscribe<ironpulse::core::SensorReadingEvent>(
         [&](const ironpulse::core::SensorReadingEvent& reading) {
             store.record(reading.sensor_id, reading.value, reading.timestamp);
+            if (exporter) {
+                exporter->submit(reading.sensor_id, reading.value, reading.timestamp);
+            }
             metrics.increment("ironpulse_readings_total", {{"sensor", reading.sensor_id}});
             const auto unit = sensor_unit.find(reading.sensor_id);  // read-only: safe across threads
             metrics.set(
@@ -264,6 +319,7 @@ int main(int argc, char** argv) {
     // retention_hours).
     asio::steady_timer maintenance_timer(io_context);
     auto last_prune = std::chrono::steady_clock::now();
+    std::uint64_t last_export_dropped = 0;
     std::function<void()> schedule_maintenance = [&]() {
         maintenance_timer.expires_after(std::chrono::seconds(5));
         maintenance_timer.async_wait([&](const asio::error_code& ec) {
@@ -273,6 +329,9 @@ int main(int argc, char** argv) {
             const auto now = std::chrono::steady_clock::now();
             metrics.set("ironpulse_uptime_seconds", std::chrono::duration<double>(now - started_at).count());
             metrics.set("ironpulse_websocket_clients", static_cast<double>(ws_server->connection_count()));
+            if (exporter) {
+                publish_export_stats(*exporter, metrics, last_export_dropped);
+            }
             if (wal) {
                 wal->flush_all();
                 if (now - last_prune >= std::chrono::hours(1)) {
@@ -322,6 +381,16 @@ int main(int argc, char** argv) {
     for (auto& t : io_threads) {
         if (t.joinable())
             t.join();
+    }
+    if (exporter) {
+        // After the I/O threads are gone no reading can arrive any more, so
+        // everything queued is written out before the segment is sealed.
+        exporter->stop();
+        const auto stats = exporter->stats();
+        IP_LOG_INFO("Export: {} reading(s) in {} batch(es), {} dropped",
+                    stats.accepted,
+                    stats.batches_written,
+                    stats.dropped);
     }
     IP_LOG_INFO("Stopped cleanly");
     return 0;

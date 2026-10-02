@@ -104,6 +104,21 @@ struct NotificationsConfig {
     std::vector<NotificationChannelConfig> channels;
 };
 
+/// Bulk export of every reading to binary segment files (ingest module).
+struct ExportConfig {
+    bool enabled = false;
+    /// Where segment files are written; created if missing.
+    std::string directory = "export";
+    /// Readings that may wait in memory for the writer; a power of two.
+    std::size_t queue_capacity = 65536;
+    /// Readings per batch; a batch is also written when flush_interval_ms
+    /// has passed since the previous one.
+    std::size_t batch_size = 1000;
+    std::uint32_t flush_interval_ms = 1000;
+    /// A new segment file is started when the current one reaches this size.
+    std::uint32_t segment_max_mb = 64;
+};
+
 struct AppConfig {
     std::string app_name = "ironpulse";
     std::string log_level = "info";
@@ -120,6 +135,7 @@ struct AppConfig {
     std::string api_token;
     std::vector<ModbusDeviceConfig> devices;
     NotificationsConfig notifications;
+    ExportConfig export_config;  // JSON key "export" (a C++ keyword)
 
     /// Non-fatal problems found while loading (e.g. a notification channel
     /// left without credentials); the caller logs them at startup.
