@@ -22,7 +22,7 @@ COPY . .
 # Slack and most webhooks).
 RUN cmake --preset release -DHTTPLIB_REQUIRE_OPENSSL=ON \
     && cmake --build --preset release -j"$(nproc)" \
-    && strip build/release/ironpulse
+    && strip build/release/ironpulse build/release/ironpulse-export
 
 # ---------------------------------------------------------------------------
 # Stage 2: runtime — minimal image, no compiler/toolchain
@@ -44,6 +44,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 COPY --from=build /src/build/release/ironpulse /app/ironpulse
+COPY --from=build /src/build/release/ironpulse-export /usr/local/bin/ironpulse-export
 COPY web/ /app/web/
 COPY deploy/config/config.example.json /app/config.json
 

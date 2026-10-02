@@ -10,6 +10,14 @@
   "persistence_enabled": true,
   "retention_hours": 168,
   "api_token": "${IRONPULSE_API_TOKEN}",
+  "export": {
+    "enabled": false,
+    "directory": "/app/data/export",
+    "queue_capacity": 65536,
+    "batch_size": 1000,
+    "flush_interval_ms": 1000,
+    "segment_max_mb": 64
+  },
   "devices": [
     {
       "id": "transformer_01",

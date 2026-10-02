@@ -47,6 +47,9 @@ services:
       IRONPULSE_RETENTION_HOURS: "${RETENTION_HOURS:-168}"
       IRONPULSE_PERSISTENCE_ENABLED: "true"
       IRONPULSE_DATA_DIR: "/app/data"
+      # Bulk export of every reading to segment files (off unless set in .env).
+      IRONPULSE_EXPORT_ENABLED: "${EXPORT_ENABLED:-false}"
+      IRONPULSE_EXPORT_DIR: "/app/data/export"
       # Security and notifications — all optional, all set in .env
       # (see .env.example). Empty values leave the feature off.
       IRONPULSE_API_TOKEN: "${IRONPULSE_API_TOKEN:-}"
