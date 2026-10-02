@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace apollonian::core {
+namespace ironpulse::ingest {
 
 // Hardware cache line size used across the library to align hot fields and
 // avoid false sharing between threads.
@@ -18,4 +18,4 @@ namespace apollonian::core {
 // majority of modern x86-64 and ARM64 cores.
 inline constexpr std::size_t kCacheLineSize = 64;
 
-}  // namespace apollonian::core
+}  // namespace ironpulse::ingest

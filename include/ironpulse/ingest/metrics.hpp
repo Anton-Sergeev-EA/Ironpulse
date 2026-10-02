@@ -4,9 +4,9 @@
 #include <chrono>
 #include <cstdint>
 
-#include "ingestor/cache_line.hpp"
+#include "ironpulse/ingest/cache_line.hpp"
 
-namespace apollonian::core {
+namespace ironpulse::ingest {
 
 /**
  * @brief Thread-safe Metrics Snapshot for reporting and telemetry export.
@@ -89,4 +89,4 @@ class Metrics {
     alignas(kCacheLineSize) std::atomic<uint64_t> m_total_latency_ns{0};
 };
 
-}  // namespace apollonian::core
+}  // namespace ironpulse::ingest

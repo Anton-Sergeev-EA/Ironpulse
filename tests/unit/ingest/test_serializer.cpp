@@ -5,9 +5,9 @@
 #include <span>
 #include <vector>
 
-#include "ingestor/serializer.hpp"
+#include "ironpulse/ingest/serializer.hpp"
 
-using namespace apollonian::core;
+using namespace ironpulse::ingest;
 
 TEST(SerializerTest, ZeroAllocationSerializeAndDeserialize) {
     std::vector<TelemetrySample> samples;

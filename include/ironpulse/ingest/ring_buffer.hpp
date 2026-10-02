@@ -7,9 +7,9 @@
 #include <type_traits>
 #include <utility>
 
-#include "ingestor/cache_line.hpp"
+#include "ironpulse/ingest/cache_line.hpp"
 
-namespace apollonian::core {
+namespace ironpulse::ingest {
 
 /**
  * @brief High-Performance, Lock-Free Single-Producer Single-Consumer (SPSC) Ring Buffer.
@@ -164,4 +164,4 @@ class RingBuffer {
     alignas(kCacheLineSize) char m_padding[1];
 };
 
-}  // namespace apollonian::core
+}  // namespace ironpulse::ingest

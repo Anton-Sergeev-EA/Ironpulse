@@ -5,9 +5,9 @@
 #include <thread>
 #include <vector>
 
-#include "ingestor/ring_buffer.hpp"
+#include "ironpulse/ingest/ring_buffer.hpp"
 
-using namespace apollonian::core;
+using namespace ironpulse::ingest;
 
 namespace {
 

@@ -1,4 +1,4 @@
-#include "ingestor/ingestor.hpp"
+#include "ironpulse/ingest/ingestor.hpp"
 
 #include <chrono>
 #include <iostream>
@@ -10,7 +10,7 @@
 #include <immintrin.h>  // For _mm_pause()
 #endif
 
-namespace apollonian::core {
+namespace ironpulse::ingest {
 
 namespace {
 
@@ -154,4 +154,4 @@ void Ingestor::consumer_loop() {
     }
 }
 
-}  // namespace apollonian::core
+}  // namespace ironpulse::ingest

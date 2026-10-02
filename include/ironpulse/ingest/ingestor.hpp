@@ -14,7 +14,7 @@
 #include "ring_buffer.hpp"
 #include "serializer.hpp"
 
-namespace apollonian::core {
+namespace ironpulse::ingest {
 
 /**
  * @brief High-Performance Telemetry Ingestion Orchestrator.
@@ -95,4 +95,4 @@ class Ingestor {
     std::jthread m_consumer_thread;
 };
 
-}  // namespace apollonian::core
+}  // namespace ironpulse::ingest

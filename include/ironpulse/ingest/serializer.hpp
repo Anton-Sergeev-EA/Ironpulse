@@ -14,7 +14,7 @@
 #endif
 #endif
 
-namespace apollonian::core {
+namespace ironpulse::ingest {
 
 /**
  * @brief Memory-aligned Telemetry Sample payload.
@@ -214,4 +214,4 @@ class Serializer {
     }
 };
 
-}  // namespace apollonian::core.
+}  // namespace ironpulse::ingest
