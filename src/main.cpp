@@ -99,6 +99,9 @@ void describe_metrics(ironpulse::core::Metrics& metrics) {
         "ironpulse_export_batch_errors_total", Type::counter, "Export batches lost to an I/O error.");
     metrics.describe("ironpulse_export_bytes_total", Type::counter, "Bytes written to export segments.");
     metrics.describe("ironpulse_export_segments_total", Type::counter, "Export segment files completed.");
+    metrics.describe("ironpulse_export_segments_deleted_total",
+                     Type::counter,
+                     "Oldest export segments deleted to stay within export.max_total_mb.");
     metrics.describe("ironpulse_export_queue_depth", Type::gauge, "Readings waiting to be exported.");
 }
 
@@ -114,6 +117,7 @@ void publish_export_stats(const ironpulse::ingest::ReadingExporter& exporter,
     metrics.set("ironpulse_export_batch_errors_total", static_cast<double>(stats.batches_failed));
     metrics.set("ironpulse_export_bytes_total", static_cast<double>(stats.bytes_written));
     metrics.set("ironpulse_export_segments_total", static_cast<double>(stats.segments_completed));
+    metrics.set("ironpulse_export_segments_deleted_total", static_cast<double>(stats.segments_deleted));
     metrics.set("ironpulse_export_queue_depth", static_cast<double>(stats.queue_depth));
     if (stats.dropped > last_dropped) {
         IP_LOG_WARN(
@@ -197,11 +201,15 @@ int main(int argc, char** argv) {
                         exporter->recovered_segments());
         }
         exporter->start();
-        IP_LOG_INFO("Export enabled: {} (batch {} readings / {} ms, segments up to {} MB)",
-                    config.export_config.directory,
-                    config.export_config.batch_size,
-                    config.export_config.flush_interval_ms,
-                    config.export_config.segment_max_mb);
+        IP_LOG_INFO(
+            "Export enabled: {} (batch {} readings / {} ms, segments up to {} MB, {})",
+            config.export_config.directory,
+            config.export_config.batch_size,
+            config.export_config.flush_interval_ms,
+            config.export_config.segment_max_mb,
+            config.export_config.max_total_mb == 0
+                ? std::string("no total size limit")
+                : "oldest deleted above " + std::to_string(config.export_config.max_total_mb) + " MB");
     }
 
     ironpulse::analytics::RuleEngine rule_engine(bus);

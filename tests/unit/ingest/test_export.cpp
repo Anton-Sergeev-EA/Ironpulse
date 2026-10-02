@@ -363,3 +363,81 @@ TEST_CASE("ReadingExporter ignores unknown sensors and readings after stop", "[i
           static_cast<std::uint64_t>(
               std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count()));
 }
+
+TEST_CASE("SegmentWriter deletes the oldest segments to stay within the total size limit",
+          "[ingest][segment]") {
+    TempDir dir;
+    // Files that are not this writer's segments must never be touched.
+    std::ofstream(dir.path() / "notes.txt") << "keep me";
+    std::ofstream(dir.path() / "other.ipseg") << "not ours";
+
+    constexpr std::uint64_t kSegment = 6000;
+    constexpr std::uint64_t kTotal = 15000;
+    std::uint64_t deleted = 0;
+    {
+        SegmentWriter writer(
+            {.directory = dir.path(), .max_segment_bytes = kSegment, .max_total_bytes = kTotal}, two_tags());
+        for (std::uint64_t i = 0; i < 20; ++i) {
+            writer.write_batch(encode(i * 1000, 100));  // 2416 bytes each
+        }
+        deleted = writer.segments_deleted();
+    }
+    CHECK(deleted > 0);
+
+    std::uint64_t total = 0;
+    std::uint64_t oldest_kept = UINT64_MAX;
+    std::uint64_t newest_kept = 0;
+    for (const auto& file : files_with(dir.path(), kSegmentExtension)) {
+        if (file.filename() == "other.ipseg") {
+            continue;
+        }
+        total += fs::file_size(file);
+        for (const auto& s : read_all(file)) {
+            oldest_kept = std::min(oldest_kept, s.timestamp_ms);
+            newest_kept = std::max(newest_kept, s.timestamp_ms);
+        }
+    }
+    CHECK(total <= kTotal);
+    CHECK(newest_kept == 19 * 1000 + 99);  // the newest data always survives
+    CHECK(oldest_kept > 0);                // the oldest was deleted
+    CHECK(fs::exists(dir.path() / "notes.txt"));
+    CHECK(fs::exists(dir.path() / "other.ipseg"));
+}
+
+TEST_CASE("SegmentWriter applies a smaller limit at startup", "[ingest][segment]") {
+    TempDir dir;
+    {
+        SegmentWriter writer({.directory = dir.path(), .max_segment_bytes = 6000}, two_tags());
+        for (std::uint64_t i = 0; i < 10; ++i) {
+            writer.write_batch(encode(i * 1000, 100));
+        }
+    }
+    const auto before = segments(dir.path()).size();
+    REQUIRE(before >= 4);
+
+    SegmentWriter restarted({.directory = dir.path(), .max_segment_bytes = 6000, .max_total_bytes = 12000},
+                            two_tags());
+    std::uint64_t total = 0;
+    for (const auto& file : segments(dir.path())) {
+        total += fs::file_size(file);
+    }
+    CHECK(total <= 12000);
+    CHECK(restarted.segments_deleted() == before - segments(dir.path()).size());
+}
+
+TEST_CASE("SegmentWriter keeps everything when the limit is 0", "[ingest][segment]") {
+    TempDir dir;
+    {
+        SegmentWriter writer({.directory = dir.path(), .max_segment_bytes = 6000, .max_total_bytes = 0},
+                             two_tags());
+        for (std::uint64_t i = 0; i < 10; ++i) {
+            writer.write_batch(encode(i * 1000, 100));
+        }
+        CHECK(writer.segments_deleted() == 0);
+    }
+    std::uint64_t samples = 0;
+    for (const auto& file : segments(dir.path())) {
+        samples += read_all(file).size();
+    }
+    CHECK(samples == 1000);
+}

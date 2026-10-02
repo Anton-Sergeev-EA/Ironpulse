@@ -117,6 +117,9 @@ struct ExportConfig {
     std::uint32_t flush_interval_ms = 1000;
     /// A new segment file is started when the current one reaches this size.
     std::uint32_t segment_max_mb = 64;
+    /// Disk budget for all export files together. When it would be exceeded,
+    /// the oldest finished segments are deleted. 0 = keep everything.
+    std::uint32_t max_total_mb = 1024;
 };
 
 struct AppConfig {

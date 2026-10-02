@@ -29,6 +29,7 @@ ReadingExporter::ReadingExporter(const core::ExportConfig& config, std::vector<T
         SegmentWriterOptions{
             .directory = config.directory,
             .max_segment_bytes = std::uint64_t{config.segment_max_mb} * 1024 * 1024,
+            .max_total_bytes = std::uint64_t{config.max_total_mb} * 1024 * 1024,
         },
         std::move(tags));
     ingestor_ = std::make_unique<Ingestor>(
@@ -98,6 +99,7 @@ ExportStats ReadingExporter::stats() const noexcept {
         .batches_failed = counters.batches_failed,
         .bytes_written = writer_->bytes_written(),
         .segments_completed = writer_->segments_completed(),
+        .segments_deleted = writer_->segments_deleted(),
         .queue_depth = ingestor_->queue_depth(),
     };
 }

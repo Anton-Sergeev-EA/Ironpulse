@@ -39,6 +39,7 @@ TEST_CASE("Export is disabled by default with sensible defaults", "[config][expo
     CHECK(cfg.export_config.batch_size == 1000);
     CHECK(cfg.export_config.flush_interval_ms == 1000);
     CHECK(cfg.export_config.segment_max_mb == 64);
+    CHECK(cfg.export_config.max_total_mb == 1024);
 }
 
 TEST_CASE("The export section is read from the config file", "[config][export]") {
@@ -81,4 +82,31 @@ TEST_CASE("IRONPULSE_EXPORT_* environment variables override the file", "[config
     const auto cfg = AppConfig::load_from_string(with_export(R"({"enabled": false, "directory": "local"})"));
     CHECK(cfg.export_config.enabled);
     CHECK(cfg.export_config.directory == "/data/export");
+}
+
+TEST_CASE("The export size limit must leave room for two segments, or be 0", "[config][export]") {
+    CHECK(AppConfig::load_from_string(with_export(R"({"segment_max_mb": 8, "max_total_mb": 16})"))
+              .export_config.max_total_mb == 16);
+    CHECK(AppConfig::load_from_string(with_export(R"({"max_total_mb": 0})")).export_config.max_total_mb == 0);
+    CHECK_THROWS_WITH(
+        AppConfig::load_from_string(with_export(R"({"segment_max_mb": 64, "max_total_mb": 100})")),
+        ContainsSubstring("export.max_total_mb") && ContainsSubstring("128"));
+    CHECK_THROWS_WITH(AppConfig::load_from_string(with_export(R"({"max_total_mb": -1})")),
+                      ContainsSubstring("export.max_total_mb"));
+}
+
+TEST_CASE("IRONPULSE_EXPORT_MAX_MB and IRONPULSE_EXPORT_SEGMENT_MB override the file",
+          "[config][export][env]") {
+    EnvGuard max_mb("IRONPULSE_EXPORT_MAX_MB", "200");
+    EnvGuard segment_mb("IRONPULSE_EXPORT_SEGMENT_MB", "8");
+    const auto cfg =
+        AppConfig::load_from_string(with_export(R"({"max_total_mb": 5000, "segment_max_mb": 64})"));
+    CHECK(cfg.export_config.max_total_mb == 200);
+    CHECK(cfg.export_config.segment_max_mb == 8);
+}
+
+TEST_CASE("Environment overrides are validated too", "[config][export][env]") {
+    EnvGuard max_mb("IRONPULSE_EXPORT_MAX_MB", "50");  // below 2 x the default 64 MB segment
+    CHECK_THROWS_WITH(AppConfig::load_from_string(R"({"devices": []})"),
+                      ContainsSubstring("export.max_total_mb"));
 }

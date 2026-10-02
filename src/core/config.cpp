@@ -408,6 +408,10 @@ void apply_env_overrides(AppConfig& cfg) {
         cfg.export_config.enabled = parse_or<bool>(v, cfg.export_config.enabled);
     if (auto v = env("IRONPULSE_EXPORT_DIR"))
         cfg.export_config.directory = *v;
+    if (auto v = env("IRONPULSE_EXPORT_MAX_MB"))
+        cfg.export_config.max_total_mb = parse_or<std::uint32_t>(v, cfg.export_config.max_total_mb);
+    if (auto v = env("IRONPULSE_EXPORT_SEGMENT_MB"))
+        cfg.export_config.segment_max_mb = parse_or<std::uint32_t>(v, cfg.export_config.segment_max_mb);
 }
 
 ExportConfig parse_export(const json& j) {
@@ -423,6 +427,7 @@ ExportConfig parse_export(const json& j) {
     e.flush_interval_ms =
         get_int<std::uint32_t>(j, "flush_interval_ms", e.flush_interval_ms, path, 10, 3'600'000);
     e.segment_max_mb = get_int<std::uint32_t>(j, "segment_max_mb", e.segment_max_mb, path, 1, 65536);
+    e.max_total_mb = get_int<std::uint32_t>(j, "max_total_mb", e.max_total_mb, path, 0, 1U << 24);
     return e;
 }
 
@@ -474,6 +479,16 @@ void validate(AppConfig& cfg) {
     }
     if (exp.enabled && exp.directory.empty()) {
         fail("export.directory", "must not be empty when export is enabled");
+    }
+    if (exp.segment_max_mb == 0) {
+        fail("export.segment_max_mb", "must be at least 1");
+    }
+    // Room for the segment being written plus at least one finished one;
+    // otherwise every rotation would delete the only finished segment.
+    if (exp.max_total_mb != 0 && exp.max_total_mb < 2ULL * exp.segment_max_mb) {
+        fail("export.max_total_mb",
+             "must be 0 (no limit) or at least twice export.segment_max_mb (" +
+                 std::to_string(2ULL * exp.segment_max_mb) + ")");
     }
 
     // A channel whose credentials come from an unset environment variable

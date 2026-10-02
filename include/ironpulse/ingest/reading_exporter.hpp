@@ -24,6 +24,7 @@ struct ExportStats {
     std::uint64_t batches_failed = 0;  // batches lost to an I/O error
     std::uint64_t bytes_written = 0;
     std::uint64_t segments_completed = 0;
+    std::uint64_t segments_deleted = 0;  // removed to stay within max_total_mb
     std::size_t queue_depth = 0;
 };
 

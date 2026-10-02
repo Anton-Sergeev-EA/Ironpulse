@@ -1,5 +1,6 @@
 #include "ironpulse/ingest/segment.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <ctime>
@@ -109,6 +110,9 @@ SegmentWriter::SegmentWriter(SegmentWriterOptions options, std::vector<TagInfo> 
             }
         }
     }
+    // Apply the limit right away: the directory may already be over it
+    // after a restart with a smaller limit.
+    enforce_total_limit(0);
 }
 
 SegmentWriter::~SegmentWriter() {
@@ -155,9 +159,11 @@ void SegmentWriter::open_segment() {
 
 void SegmentWriter::write_batch(std::span<const std::uint8_t> batch) {
     if (!out_.is_open()) {
+        enforce_total_limit(options_.max_segment_bytes);
         open_segment();
     } else if (segment_bytes_ + batch.size() > options_.max_segment_bytes) {
         finish_segment();
+        enforce_total_limit(options_.max_segment_bytes);
         open_segment();
     }
 
@@ -188,6 +194,48 @@ void SegmentWriter::finish_segment() noexcept {
 
 void SegmentWriter::close() noexcept {
     finish_segment();
+}
+
+void SegmentWriter::enforce_total_limit(std::uint64_t reserve) noexcept {
+    if (options_.max_total_bytes == 0) {
+        return;
+    }
+    try {
+        struct Finished {
+            std::filesystem::path path;
+            std::uint64_t bytes;
+        };
+        std::vector<Finished> finished;
+        std::uint64_t total = segment_bytes_;  // the segment currently open, if any
+        std::error_code ec;
+        for (const auto& entry : std::filesystem::directory_iterator(options_.directory, ec)) {
+            const std::string name = entry.path().filename().string();
+            if (!entry.is_regular_file(ec) || name.rfind("telemetry-", 0) != 0 ||
+                entry.path().extension() != kSegmentExtension) {
+                continue;
+            }
+            const auto bytes = entry.file_size(ec);
+            if (!ec) {
+                finished.push_back({entry.path(), bytes});
+                total += bytes;
+            }
+        }
+        // Names start with the UTC creation time, so name order is age order.
+        std::sort(finished.begin(), finished.end(), [](const Finished& a, const Finished& b) {
+            return a.path.filename() < b.path.filename();
+        });
+        for (const auto& segment : finished) {
+            if (total + reserve <= options_.max_total_bytes) {
+                break;
+            }
+            if (std::filesystem::remove(segment.path, ec) && !ec) {
+                total -= segment.bytes;
+                segments_deleted_.fetch_add(1, std::memory_order_relaxed);
+            }
+        }
+    } catch (...) {
+        // Housekeeping must never take the export down; try again next time.
+    }
 }
 
 // ---------------------------------------------------------------------------

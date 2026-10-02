@@ -62,6 +62,10 @@ struct SegmentWriterOptions {
     std::filesystem::path directory = "export";
     /// A new segment is started once the current one would grow past this.
     std::uint64_t max_segment_bytes = 64ULL * 1024 * 1024;
+    /// Upper bound for all segments in the directory together (finished ones
+    /// plus the one being written). When a new segment would push the total
+    /// past it, the oldest finished segments are deleted. 0 = no limit.
+    std::uint64_t max_total_bytes = 0;
 };
 
 /// Appends encoded batches to segment files, starting a new segment when
@@ -96,6 +100,10 @@ public:
     [[nodiscard]] std::size_t recovered_on_startup() const noexcept {
         return recovered_;
     }
+    /// Finished segments deleted to stay within max_total_bytes.
+    [[nodiscard]] std::uint64_t segments_deleted() const noexcept {
+        return segments_deleted_.load(std::memory_order_relaxed);
+    }
     [[nodiscard]] const std::filesystem::path& directory() const noexcept {
         return options_.directory;
     }
@@ -103,6 +111,10 @@ public:
 private:
     void open_segment();
     void finish_segment() noexcept;
+    /// Deletes the oldest finished segments until the directory fits in
+    /// max_total_bytes with room for `reserve` more bytes. Only files this
+    /// writer names (telemetry-*.ipseg) are ever touched.
+    void enforce_total_limit(std::uint64_t reserve) noexcept;
 
     SegmentWriterOptions options_;
     std::string tag_table_;
@@ -114,6 +126,7 @@ private:
     std::size_t recovered_ = 0;
     std::atomic<std::uint64_t> bytes_written_{0};
     std::atomic<std::uint64_t> segments_completed_{0};
+    std::atomic<std::uint64_t> segments_deleted_{0};
 };
 
 /// Outcome of reading one segment.
