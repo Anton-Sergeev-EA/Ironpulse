@@ -24,8 +24,13 @@ export/
 - After a crash, the next start renames leftover `.part` files to `.ipseg`; the
   batches that reached the disk stay readable, and the reader reports the cut-off
   last batch.
-- Ironpulse never deletes segments: removing them once they are shipped is up to
-  you (for example `find export -name '*.ipseg' -mtime +7 -delete`).
+- Disk use is capped by `export.max_total_mb` (`EXPORT_MAX_MB` in Docker,
+  default 1024 MB): before starting a new segment, Ironpulse deletes the oldest
+  finished `telemetry-*.ipseg` files until everything fits, including the new
+  segment. Nothing else in the directory is touched. `0` disables the limit.
+  It must be at least twice `export.segment_max_mb`, so a finished segment
+  always survives a rotation. Ship segments before they age out if you need the
+  full history.
 
 ## Layout
 

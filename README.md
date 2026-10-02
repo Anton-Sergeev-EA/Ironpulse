@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#языки-интерфейса)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
 
 **Русский** · [English](README.en.md) · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -264,7 +264,7 @@ scrape_configs:
 
 В Docker достаточно `EXPORT_ENABLED=true` в `.env` — файлы появятся в томе данных, в `/app/data/export`.
 
-Файлы `telemetry-<время>-NNNNNN.ipseg`: 24 байта на показание, контрольная сумма CRC-32C на каждый пакет и список датчиков внутри каждого файла, поэтому файл читается сам по себе, даже после изменения конфигурации. Файл, который ещё пишется, заканчивается на `.part` — забирайте только готовые `.ipseg`. Ironpulse их не удаляет: хранение выгрузки — на вашей стороне.
+Файлы `telemetry-<время>-NNNNNN.ipseg`: 24 байта на показание, контрольная сумма CRC-32C на каждый пакет и список датчиков внутри каждого файла, поэтому файл читается сам по себе, даже после изменения конфигурации. Файл, который ещё пишется, заканчивается на `.part` — забирайте только готовые `.ipseg`. Место ограничено: когда файлы выгрузки превышают `EXPORT_MAX_MB` (по умолчанию 1024 МБ; в конфиге — `export.max_total_mb`), самые старые удаляются автоматически, так что диск не переполнится. Нужна полная история — забирайте файлы к себе раньше, чем они уйдут, или поставьте `0`, чтобы не удалять ничего.
 
 ```bash
 ironpulse-export verify export/                       # проверить CRC каждого пакета
@@ -425,7 +425,7 @@ docs/                     Архитектура, OpenAPI, ADR
 
 ### Инженерные практики.
 - Строгие предупреждения компилятора (`-Wall -Wextra -Wpedantic -Wconversion ...`), сборка без единого предупреждения; опционально — как ошибки (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 131 тест: unit-тесты каждого компонента, тесты HTTP API и WebSocket-рукопожатия на реальных сокетах, сквозные тесты с поддельным Modbus-устройством по TCP (декодирование, пределы, тайм-ауты, потеря и восстановление связи). Все зелёные под AddressSanitizer/UndefinedBehaviorSanitizer и ThreadSanitizer
+- 137 тестов: unit-тесты каждого компонента, тесты HTTP API и WebSocket-рукопожатия на реальных сокетах, сквозные тесты с поддельным Modbus-устройством по TCP (декодирование, пределы, тайм-ауты, потеря и восстановление связи). Все зелёные под AddressSanitizer/UndefinedBehaviorSanitizer и ThreadSanitizer
 - CI-матрица по GCC и Clang, санитайзеры, `clang-format`, `ruff` для симулятора, проверка полноты переводов, сборка Docker и smoke-тест Compose с проверкой живых данных — всё в [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Релизы по тегу: нативная сборка образов под amd64 и arm64 и публикация в GitHub Container Registry — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Многостадийная сборка Docker (тулчейн компилятора никогда не попадает в runtime-образ), непривилегированный пользователь контейнера, health check на каждом сервисе, чистый build-контекст через `.dockerignore`

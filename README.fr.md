@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · **Français** · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -267,7 +267,7 @@ En plus du tableau de bord, Ironpulse peut écrire chaque mesure dans des fichie
 
 Sous Docker, il suffit de mettre `EXPORT_ENABLED=true` dans `.env` : les fichiers apparaissent dans le volume de données, sous `/app/data/export`.
 
-Les fichiers s’appellent `telemetry-<heure>-NNNNNN.ipseg` : 24 octets par mesure, une somme CRC-32C par lot et la liste des capteurs dans chaque fichier, qui se lit donc seul, même après une modification de la configuration. Un fichier en cours d’écriture se termine par `.part` : ne récupérez que les `.ipseg` terminés. Ironpulse ne les supprime pas ; la conservation des données exportées vous revient.
+Les fichiers s’appellent `telemetry-<heure>-NNNNNN.ipseg` : 24 octets par mesure, une somme CRC-32C par lot et la liste des capteurs dans chaque fichier, qui se lit donc seul, même après une modification de la configuration. Un fichier en cours d’écriture se termine par `.part` : ne récupérez que les `.ipseg` terminés. L’espace est plafonné : quand les fichiers d’export dépassent `EXPORT_MAX_MB` (1024 Mo par défaut ; `export.max_total_mb` dans la configuration), les plus anciens sont supprimés automatiquement, le disque ne se remplit donc jamais. Pour garder tout l’historique, copiez les fichiers ailleurs avant leur suppression, ou mettez `0` pour ne rien supprimer.
 
 ```bash
 ironpulse-export verify export/                       # vérifier le CRC de chaque lot
@@ -391,7 +391,7 @@ Contrat complet : [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 ; ouvrez-l
 
 ### Pratiques d’ingénierie
 - Avertissements stricts du compilateur (`-Wall -Wextra -Wpedantic -Wconversion ...`) et compilation sans aucun avertissement ; en option, traités comme des erreurs (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 131 tests : tests unitaires de chaque composant, tests de l’API HTTP et du handshake WebSocket sur de vrais sockets, tests de bout en bout avec un faux équipement Modbus en TCP (décodage, limites, délais d’attente, perte et rétablissement de la liaison). Tous au vert sous AddressSanitizer/UBSan et ThreadSanitizer
+- 137 tests : tests unitaires de chaque composant, tests de l’API HTTP et du handshake WebSocket sur de vrais sockets, tests de bout en bout avec un faux équipement Modbus en TCP (décodage, limites, délais d’attente, perte et rétablissement de la liaison). Tous au vert sous AddressSanitizer/UBSan et ThreadSanitizer
 - CI : GCC et Clang, sanitizers, `clang-format`, `ruff` pour le simulateur, complétude des traductions, compilation Docker et test de fumée Compose qui vérifie les données en direct : [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Versions déclenchées par étiquette : images compilées nativement pour amd64 et arm64 et publiées dans GitHub Container Registry : [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Compilation Docker multi-étapes, utilisateur non privilégié dans le conteneur, contrôles de santé sur chaque service

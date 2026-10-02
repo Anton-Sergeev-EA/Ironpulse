@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · [中文](README.zh.md) · **हिन्दी** · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -267,7 +267,7 @@ scrape_configs:
 
 Docker में `.env` में `EXPORT_ENABLED=true` सेट करें — फ़ाइलें डेटा वॉल्यूम में `/app/data/export` में आएँगी।
 
-फ़ाइलों के नाम `telemetry-<समय>-NNNNNN.ipseg` होते हैं: प्रति रीडिंग 24 बाइट, हर बैच पर CRC-32C चेकसम, और हर फ़ाइल के अंदर सेंसरों की सूची, इसलिए कॉन्फ़िगरेशन बदलने के बाद भी फ़ाइल अपने-आप पढ़ी जा सकती है। जो फ़ाइल अभी लिखी जा रही है उसके अंत में `.part` होता है — केवल तैयार `.ipseg` फ़ाइलें लें। Ironpulse उन्हें नहीं हटाता: निर्यात डेटा को कितने समय रखना है, यह आप तय करते हैं।
+फ़ाइलों के नाम `telemetry-<समय>-NNNNNN.ipseg` होते हैं: प्रति रीडिंग 24 बाइट, हर बैच पर CRC-32C चेकसम, और हर फ़ाइल के अंदर सेंसरों की सूची, इसलिए कॉन्फ़िगरेशन बदलने के बाद भी फ़ाइल अपने-आप पढ़ी जा सकती है। जो फ़ाइल अभी लिखी जा रही है उसके अंत में `.part` होता है — केवल तैयार `.ipseg` फ़ाइलें लें। डिस्क उपयोग सीमित है: जब निर्यात फ़ाइलें `EXPORT_MAX_MB` (डिफ़ॉल्ट 1024 MB; कॉन्फ़िग में `export.max_total_mb`) से अधिक हो जाती हैं, तो सबसे पुरानी फ़ाइलें अपने-आप हट जाती हैं, इसलिए डिस्क कभी नहीं भरती। पूरा इतिहास रखना हो तो फ़ाइलें हटने से पहले कहीं और भेज दें, या कुछ भी न हटाने के लिए `0` सेट करें।
 
 ```bash
 ironpulse-export verify export/                       # हर बैच का CRC जाँचें
@@ -391,7 +391,7 @@ storage (ring buffer + WAL)  analytics (सीमाएँ,      api (REST, WebS
 
 ### इंजीनियरिंग प्रथाएँ
 - सख़्त कंपाइलर चेतावनियाँ (`-Wall -Wextra -Wpedantic -Wconversion ...`), बिना एक भी चेतावनी का बिल्ड; वैकल्पिक रूप से त्रुटि के रूप में (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 131 टेस्ट: हर घटक के यूनिट टेस्ट, वास्तविक सॉकेट पर HTTP API और WebSocket हैंडशेक टेस्ट, TCP पर नकली Modbus डिवाइस के साथ एंड-टू-एंड टेस्ट (डिकोडिंग, सीमाएँ, टाइमआउट, संपर्क टूटना और बहाली)। AddressSanitizer/UBSan और ThreadSanitizer के तहत सभी हरे
+- 137 टेस्ट: हर घटक के यूनिट टेस्ट, वास्तविक सॉकेट पर HTTP API और WebSocket हैंडशेक टेस्ट, TCP पर नकली Modbus डिवाइस के साथ एंड-टू-एंड टेस्ट (डिकोडिंग, सीमाएँ, टाइमआउट, संपर्क टूटना और बहाली)। AddressSanitizer/UBSan और ThreadSanitizer के तहत सभी हरे
 - CI: GCC और Clang, सैनिटाइज़र, `clang-format`, सिम्युलेटर के लिए `ruff`, अनुवादों की पूर्णता की जाँच, Docker बिल्ड और लाइव डेटा जाँचने वाला Compose स्मोक टेस्ट — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - टैग से रिलीज़: amd64 और arm64 पर नेटिव इमेज बिल्ड और GitHub Container Registry में प्रकाशन — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - मल्टी-स्टेज Docker बिल्ड, कंटेनर में बिना विशेषाधिकार वाला उपयोगकर्ता, हर सेवा पर हेल्थ-चेक

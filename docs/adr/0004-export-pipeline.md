@@ -73,8 +73,10 @@ The batch version was bumped to 2; version 1 was never used outside apollonian.
 ## Consequences
 - One more thread and one more bounded buffer (`queue_capacity` × 24 bytes,
   1.5 MB by default) when export is enabled; nothing when it is disabled.
-- Ironpulse does not delete segments; retention of exported data is the
-  consumer's responsibility.
+- Disk use is bounded by `export.max_total_mb` (1 GB by default): the oldest
+  finished segments are deleted before a new one starts. Unbounded growth would
+  eventually fill the disk the WAL and the engine also need; consumers that want
+  everything ship segments before they age out.
 - The "Why not lock-free everywhere?" position in `architecture.md` stands: the
   lock-free queue is used where a thread boundary to slow I/O exists, not in
   storage.

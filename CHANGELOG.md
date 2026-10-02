@@ -16,12 +16,22 @@ All notable changes to this project are documented here. The format follows
 - `ironpulse-export` command-line tool: `verify`, `tags`, `dump` (CSV), also
   included in the Docker image; a dependency-free Python reader in
   `tools/export_reader/`.
+- **Disk budget for the export:** `export.max_total_mb` (`EXPORT_MAX_MB` in
+  Docker, default 1024 MB) deletes the oldest finished segments automatically;
+  `export.segment_max_mb` is also settable as `EXPORT_SEGMENT_MB`.
 - `ironpulse_export_*` metrics (readings, drops, batches, I/O errors, bytes,
-  segments, queue depth) and a log warning when export readings are dropped.
+  segments, deleted segments, queue depth) and a log warning when export
+  readings are dropped.
 - The `ingest` module: the lock-free SPSC queue, batch serializer and batching
   consumer of the former apollonian_core_ingestor project, merged with its
   history.
-- Benchmarks for the export path; 39 new tests (131 in total).
+- Benchmarks for the export path; 45 new tests (137 in total).
+
+### Changed
+- Docker Compose rotates container logs (10 MB × 3 per service) instead of
+  keeping them forever.
+- The Modbus simulator's port follows `IRONPULSE_BIND_HOST`, so a production
+  deployment no longer exposes it to the internet.
 
 ### Fixed (in the imported ingestor code)
 - The hardware (SSE4.2) and software CRC paths used different polynomials, so a

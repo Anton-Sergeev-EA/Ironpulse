@@ -11,6 +11,14 @@
 # conflict (docs/adr/0003-env-driven-config.md has the full reasoning).
 # ---------------------------------------------------------------------------
 
+# Docker keeps container logs forever by default, which slowly fills a small
+# VPS disk. Every service rotates its log at 10 MB and keeps 3 files.
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
 services:
   simulator:
     build:
@@ -29,6 +37,7 @@ services:
       retries: 5
       start_period: 5s
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - ironpulse-net
 
@@ -53,6 +62,8 @@ services:
       # Bulk export of every reading to segment files (off unless set in .env).
       IRONPULSE_EXPORT_ENABLED: "${EXPORT_ENABLED:-false}"
       IRONPULSE_EXPORT_DIR: "/app/data/export"
+      IRONPULSE_EXPORT_MAX_MB: "${EXPORT_MAX_MB:-1024}"
+      IRONPULSE_EXPORT_SEGMENT_MB: "${EXPORT_SEGMENT_MB:-16}"
       # Security and notifications — all optional, all set in .env
       # (see .env.example). Empty values leave the feature off.
       IRONPULSE_API_TOKEN: "${IRONPULSE_API_TOKEN:-}"
@@ -75,6 +86,7 @@ services:
       retries: 5
       start_period: 10s
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - ironpulse-net
 
@@ -102,6 +114,7 @@ services:
       retries: 5
       start_period: 5s
     restart: unless-stopped
+    logging: *default-logging
     networks:
       - ironpulse-net
 

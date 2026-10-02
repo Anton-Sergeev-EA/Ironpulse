@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · **Deutsch** · [Italiano](README.it.md)
 
@@ -267,7 +267,7 @@ Neben dem Dashboard kann Ironpulse jeden Messwert in kompakte Binärdateien schr
 
 In Docker genügt `EXPORT_ENABLED=true` in `.env` – die Dateien landen im Datenvolume unter `/app/data/export`.
 
-Die Dateien heißen `telemetry-<Zeit>-NNNNNN.ipseg`: 24 Byte pro Messwert, eine CRC-32C-Prüfsumme pro Batch und die Sensorliste in jeder Datei, sodass jede Datei für sich lesbar ist, auch nach einer Konfigurationsänderung. Eine Datei, die noch geschrieben wird, endet auf `.part` – holen Sie nur fertige `.ipseg`-Dateien ab. Ironpulse löscht sie nicht; die Aufbewahrung der exportierten Daten liegt bei Ihnen.
+Die Dateien heißen `telemetry-<Zeit>-NNNNNN.ipseg`: 24 Byte pro Messwert, eine CRC-32C-Prüfsumme pro Batch und die Sensorliste in jeder Datei, sodass jede Datei für sich lesbar ist, auch nach einer Konfigurationsänderung. Eine Datei, die noch geschrieben wird, endet auf `.part` – holen Sie nur fertige `.ipseg`-Dateien ab. Der Platz ist begrenzt: Überschreiten die Exportdateien `EXPORT_MAX_MB` (standardmäßig 1024 MB; in der Konfiguration `export.max_total_mb`), werden die ältesten automatisch gelöscht, sodass die Festplatte nie vollläuft. Wer die gesamte Historie braucht, holt die Dateien vorher ab oder setzt `0`, um nichts zu löschen.
 
 ```bash
 ironpulse-export verify export/                       # CRC jedes Batches prüfen
@@ -391,7 +391,7 @@ Vollständiger Vertrag: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 – 
 
 ### Engineering-Praxis
 - Strenge Compiler-Warnungen (`-Wall -Wextra -Wpedantic -Wconversion ...`) und ein Build ohne eine einzige Warnung; optional als Fehler (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 131 Tests: Unit-Tests für jede Komponente, Tests der HTTP-API und des WebSocket-Handshakes über echte Sockets, End-to-End-Tests mit einem gefälschten Modbus-Gerät über TCP (Dekodierung, Grenzwerte, Timeouts, Ausfall und Wiederherstellung). Alle grün unter AddressSanitizer/UBSan und ThreadSanitizer
+- 137 Tests: Unit-Tests für jede Komponente, Tests der HTTP-API und des WebSocket-Handshakes über echte Sockets, End-to-End-Tests mit einem gefälschten Modbus-Gerät über TCP (Dekodierung, Grenzwerte, Timeouts, Ausfall und Wiederherstellung). Alle grün unter AddressSanitizer/UBSan und ThreadSanitizer
 - CI: GCC und Clang, Sanitizer, `clang-format`, `ruff` für den Simulator, Vollständigkeit der Übersetzungen, Docker-Build und ein Compose-Smoke-Test, der Live-Daten prüft – [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Releases per Tag: nativ gebaute Images für amd64 und arm64, veröffentlicht in der GitHub Container Registry – [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Mehrstufiger Docker-Build, unprivilegierter Benutzer im Container, Health-Checks für jeden Dienst

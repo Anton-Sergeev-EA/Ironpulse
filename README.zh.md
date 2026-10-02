@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · **中文** · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -267,7 +267,7 @@ scrape_configs:
 
 在 Docker 中，只需在 `.env` 中设置 `EXPORT_ENABLED=true`，文件会出现在数据卷的 `/app/data/export` 中。
 
-文件名为 `telemetry-<时间>-NNNNNN.ipseg`：每条读数 24 字节，每个批次带 CRC-32C 校验，且每个文件内都含有传感器列表，因此即使配置已更改，文件也能独立读取。正在写入的文件以 `.part` 结尾——只取已完成的 `.ipseg` 文件。Ironpulse 不会删除它们，导出数据的保留由您自行负责。
+文件名为 `telemetry-<时间>-NNNNNN.ipseg`：每条读数 24 字节，每个批次带 CRC-32C 校验，且每个文件内都含有传感器列表，因此即使配置已更改，文件也能独立读取。正在写入的文件以 `.part` 结尾——只取已完成的 `.ipseg` 文件。磁盘占用有上限：导出文件超过 `EXPORT_MAX_MB`（默认 1024 MB；配置中为 `export.max_total_mb`）时，最旧的文件会被自动删除，磁盘不会被写满。如需保留完整历史，请在文件被删除前将其转存到别处，或设为 `0` 以不删除任何文件。
 
 ```bash
 ironpulse-export verify export/                       # 校验每个批次的 CRC
@@ -391,7 +391,7 @@ storage（环形缓冲 + WAL）   analytics（限值、       api（REST、WebSo
 
 ### 工程实践
 - 严格的编译器警告（`-Wall -Wextra -Wpedantic -Wconversion ...`），零警告构建；可选择将警告视为错误（`IRONPULSE_WARNINGS_AS_ERRORS`）
-- 131 个测试：每个组件的单元测试、基于真实套接字的 HTTP API 和 WebSocket 握手测试、通过 TCP 连接模拟 Modbus 设备的端到端测试（解码、限值、超时、失联与恢复）。在 AddressSanitizer/UBSan 和 ThreadSanitizer 下全部通过
+- 137 个测试：每个组件的单元测试、基于真实套接字的 HTTP API 和 WebSocket 握手测试、通过 TCP 连接模拟 Modbus 设备的端到端测试（解码、限值、超时、失联与恢复）。在 AddressSanitizer/UBSan 和 ThreadSanitizer 下全部通过
 - CI：GCC 和 Clang、Sanitizer、`clang-format`、模拟器的 `ruff`、翻译完整性检查、Docker 构建，以及检查实时数据的 Compose 冒烟测试——[`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - 基于标签的发布：在 amd64 和 arm64 上原生构建镜像并发布到 GitHub Container Registry——[`.github/workflows/release.yml`](.github/workflows/release.yml)
 - 多阶段 Docker 构建、容器内非特权用户、每个服务都有健康检查

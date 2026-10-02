@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
 
 [Русский](README.md) · [English](README.en.md) · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · **Italiano**
 
@@ -267,7 +267,7 @@ Oltre alla dashboard, Ironpulse può scrivere ogni lettura in file binari compat
 
 In Docker basta `EXPORT_ENABLED=true` in `.env`: i file compaiono nel volume dei dati, in `/app/data/export`.
 
-I file si chiamano `telemetry-<ora>-NNNNNN.ipseg`: 24 byte per lettura, un checksum CRC-32C per batch e l’elenco dei sensori dentro ogni file, che quindi si legge da solo, anche dopo una modifica della configurazione. Un file ancora in scrittura termina con `.part`: prelevate solo i `.ipseg` completati. Ironpulse non li cancella; la conservazione dei dati esportati spetta a voi.
+I file si chiamano `telemetry-<ora>-NNNNNN.ipseg`: 24 byte per lettura, un checksum CRC-32C per batch e l’elenco dei sensori dentro ogni file, che quindi si legge da solo, anche dopo una modifica della configurazione. Un file ancora in scrittura termina con `.part`: prelevate solo i `.ipseg` completati. Lo spazio è limitato: quando i file di esportazione superano `EXPORT_MAX_MB` (1024 MB di default; `export.max_total_mb` nella configurazione), i più vecchi vengono cancellati automaticamente, così il disco non si riempie mai. Per conservare tutta la storia, copiate i file altrove prima che scadano, oppure impostate `0` per non cancellare nulla.
 
 ```bash
 ironpulse-export verify export/                       # verificare il CRC di ogni batch
@@ -391,7 +391,7 @@ Contratto completo: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — apri
 
 ### Pratiche di ingegneria
 - Avvisi del compilatore rigorosi (`-Wall -Wextra -Wpedantic -Wconversion ...`) e compilazione senza un solo avviso; facoltativamente come errori (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 131 test: unit test di ogni componente, test dell’API HTTP e dell’handshake WebSocket su socket reali, test end-to-end con un falso dispositivo Modbus via TCP (decodifica, limiti, timeout, perdita e ripristino della comunicazione). Tutti verdi con AddressSanitizer/UBSan e ThreadSanitizer
+- 137 test: unit test di ogni componente, test dell’API HTTP e dell’handshake WebSocket su socket reali, test end-to-end con un falso dispositivo Modbus via TCP (decodifica, limiti, timeout, perdita e ripristino della comunicazione). Tutti verdi con AddressSanitizer/UBSan e ThreadSanitizer
 - CI: GCC e Clang, sanitizer, `clang-format`, `ruff` per il simulatore, completezza delle traduzioni, build Docker e uno smoke test con Compose che verifica i dati in tempo reale — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Rilasci tramite tag: immagini compilate nativamente per amd64 e arm64 e pubblicate su GitHub Container Registry — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Build Docker multi-stage, utente non privilegiato nel container, controlli di stato su ogni servizio

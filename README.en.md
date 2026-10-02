@@ -7,7 +7,7 @@
 [![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
 [![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-131%20passing-brightgreen)](tests)
+[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
 
 [Русский](README.md) · **English** · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
@@ -263,7 +263,7 @@ Besides the dashboard, Ironpulse can write every reading to compact binary files
 
 In Docker, set `EXPORT_ENABLED=true` in `.env` — files appear in the data volume under `/app/data/export`.
 
-Files are named `telemetry-<time>-NNNNNN.ipseg`: 24 bytes per reading, a CRC-32C checksum per batch and the sensor list inside every file, so a file can be read on its own, even after the configuration has changed. A file still being written ends in `.part` — pick up only finished `.ipseg` files. Ironpulse does not delete them: retention of exported data is up to you.
+Files are named `telemetry-<time>-NNNNNN.ipseg`: 24 bytes per reading, a CRC-32C checksum per batch and the sensor list inside every file, so a file can be read on its own, even after the configuration has changed. A file still being written ends in `.part` — pick up only finished `.ipseg` files. Disk use is capped: when export files exceed `EXPORT_MAX_MB` (1024 MB by default; `export.max_total_mb` in the config), the oldest are deleted automatically, so the disk never fills up. To keep the full history, ship files elsewhere before they age out, or set `0` to delete nothing.
 
 ```bash
 ironpulse-export verify export/                       # check every batch's CRC
@@ -383,7 +383,7 @@ Full contract: [`docs/openapi.yaml`](docs/openapi.yaml) (OpenAPI 3 — open it i
 
 ### Engineering practices.
 - Strict compiler warnings (`-Wall -Wextra -Wpedantic -Wconversion ...`), a warning-free build; optionally as errors (`IRONPULSE_WARNINGS_AS_ERRORS`)
-- 131 tests: unit tests for every component, HTTP API and WebSocket handshake tests on real sockets, end-to-end tests with a fake Modbus device over TCP (decoding, limits, timeouts, outage and recovery). All green under AddressSanitizer/UBSan and ThreadSanitizer
+- 137 tests: unit tests for every component, HTTP API and WebSocket handshake tests on real sockets, end-to-end tests with a fake Modbus device over TCP (decoding, limits, timeouts, outage and recovery). All green under AddressSanitizer/UBSan and ThreadSanitizer
 - CI: GCC and Clang, sanitizers, `clang-format`, `ruff` for the simulator, translation completeness, Docker build and a Compose smoke test that checks live data — [`.github/workflows/ci.yml`](.github/workflows/ci.yml)
 - Tag-driven releases: native amd64 and arm64 image builds published to GitHub Container Registry — [`.github/workflows/release.yml`](.github/workflows/release.yml)
 - Multi-stage Docker build, unprivileged container user, health checks on every service
