@@ -75,7 +75,8 @@ bool ReadingExporter::submit(const std::string& sensor_id,
         unknown_sensor_.fetch_add(1, std::memory_order_relaxed);
         return false;
     }
-    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count();
+    const auto ms =
+        std::chrono::duration_cast<std::chrono::milliseconds>(timestamp.time_since_epoch()).count();
     const TelemetrySample sample{
         .timestamp_ms = static_cast<std::uint64_t>(ms < 0 ? 0 : ms),
         .value = value,

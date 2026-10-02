@@ -116,9 +116,10 @@ void publish_export_stats(const ironpulse::ingest::ReadingExporter& exporter,
     metrics.set("ironpulse_export_segments_total", static_cast<double>(stats.segments_completed));
     metrics.set("ironpulse_export_queue_depth", static_cast<double>(stats.queue_depth));
     if (stats.dropped > last_dropped) {
-        IP_LOG_WARN("Export: {} reading(s) dropped — the disk is not keeping up; "
-                    "raise export.queue_capacity or check the export directory",
-                    stats.dropped - last_dropped);
+        IP_LOG_WARN(
+            "Export: {} reading(s) dropped — the disk is not keeping up; "
+            "raise export.queue_capacity or check the export directory",
+            stats.dropped - last_dropped);
         last_dropped = stats.dropped;
     }
 }

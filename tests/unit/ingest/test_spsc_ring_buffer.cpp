@@ -129,7 +129,8 @@ TEST_CASE("SpscRingBuffer destroys elements still queued when it is destroyed", 
     CHECK(live.load() == 0);
 }
 
-TEST_CASE("SpscRingBuffer delivers every element in order between two threads", "[ingest][spsc][concurrency]") {
+TEST_CASE("SpscRingBuffer delivers every element in order between two threads",
+          "[ingest][spsc][concurrency]") {
     constexpr std::size_t kCount = 1'000'000;
     SpscRingBuffer<std::size_t> rb(1024);
     std::vector<std::size_t> received;

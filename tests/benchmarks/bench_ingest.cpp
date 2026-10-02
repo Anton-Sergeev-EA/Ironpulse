@@ -90,9 +90,8 @@ static void BM_ExporterSubmit(benchmark::State& state) {
         cfg.directory = dir.string();
         cfg.queue_capacity = 1 << 20;
         cfg.batch_size = 4096;
-        exporter = new ReadingExporter(cfg,
-                                       {TagInfo{.id = 1, .sensor_id = "winding_temp"},
-                                        TagInfo{.id = 2, .sensor_id = "vibration"}});
+        exporter = new ReadingExporter(
+            cfg, {TagInfo{.id = 1, .sensor_id = "winding_temp"}, TagInfo{.id = 2, .sensor_id = "vibration"}});
         exporter->start();
     }
     const auto now = std::chrono::system_clock::now();

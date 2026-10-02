@@ -420,7 +420,8 @@ ExportConfig parse_export(const json& j) {
     e.directory = get_string(j, "directory", e.directory, path);
     e.queue_capacity = get_int<std::size_t>(j, "queue_capacity", e.queue_capacity, path, 16, 1U << 24);
     e.batch_size = get_int<std::size_t>(j, "batch_size", e.batch_size, path, 1, 1U << 20);
-    e.flush_interval_ms = get_int<std::uint32_t>(j, "flush_interval_ms", e.flush_interval_ms, path, 10, 3'600'000);
+    e.flush_interval_ms =
+        get_int<std::uint32_t>(j, "flush_interval_ms", e.flush_interval_ms, path, 10, 3'600'000);
     e.segment_max_mb = get_int<std::uint32_t>(j, "segment_max_mb", e.segment_max_mb, path, 1, 65536);
     return e;
 }

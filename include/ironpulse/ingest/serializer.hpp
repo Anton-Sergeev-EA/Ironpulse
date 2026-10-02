@@ -91,7 +91,8 @@ public:
 
     /// Writes one batch into `out`. Returns the number of bytes written, or
     /// 0 if `out` is too small (nothing is written in that case).
-    static std::size_t serialize(std::span<const TelemetrySample> samples, std::span<std::uint8_t> out) noexcept {
+    static std::size_t serialize(std::span<const TelemetrySample> samples,
+                                 std::span<std::uint8_t> out) noexcept {
         const std::size_t total = required_buffer_size(samples.size());
         if (out.size() < total || samples.size() > UINT32_MAX) {
             return 0;
@@ -199,7 +200,8 @@ public:
     }
 
     /// Portable CRC-32C; public so tests can check it against the hardware path.
-    [[nodiscard]] static std::uint32_t crc32c_software(const std::uint8_t* data, std::size_t length) noexcept {
+    [[nodiscard]] static std::uint32_t crc32c_software(const std::uint8_t* data,
+                                                       std::size_t length) noexcept {
         std::uint32_t crc = 0xFFFFFFFFU;
         for (std::size_t i = 0; i < length; ++i) {
             crc = detail::kCrc32cTable[(crc ^ data[i]) & 0xFFU] ^ (crc >> 8);

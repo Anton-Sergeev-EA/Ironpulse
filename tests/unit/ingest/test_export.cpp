@@ -48,7 +48,8 @@ std::vector<fs::path> files_with(const fs::path& dir, const std::string& ending)
     std::vector<fs::path> found;
     for (const auto& entry : fs::directory_iterator(dir)) {
         const auto name = entry.path().filename().string();
-        if (name.size() >= ending.size() && name.compare(name.size() - ending.size(), ending.size(), ending) == 0) {
+        if (name.size() >= ending.size() &&
+            name.compare(name.size() - ending.size(), ending.size(), ending) == 0) {
             found.push_back(entry.path());
         }
     }
@@ -62,25 +63,36 @@ std::vector<fs::path> segments(const fs::path& dir) {
 
 std::vector<TagInfo> two_tags() {
     return {
-        TagInfo{.id = 1, .sensor_id = "winding_temp", .device_id = "transformer_01", .name = "Winding", .unit = "°C"},
-        TagInfo{.id = 2, .sensor_id = "vibration", .device_id = "pump_02", .name = "Vibration, \"RMS\"", .unit = "mm/s"},
+        TagInfo{.id = 1,
+                .sensor_id = "winding_temp",
+                .device_id = "transformer_01",
+                .name = "Winding",
+                .unit = "°C"},
+        TagInfo{.id = 2,
+                .sensor_id = "vibration",
+                .device_id = "pump_02",
+                .name = "Vibration, \"RMS\"",
+                .unit = "mm/s"},
     };
 }
 
 std::vector<std::uint8_t> encode(std::uint64_t first, std::uint32_t count) {
     std::vector<TelemetrySample> samples;
     for (std::uint32_t i = 0; i < count; ++i) {
-        samples.push_back(TelemetrySample{
-            .timestamp_ms = first + i, .value = static_cast<double>(first + i), .tag_id = 1 + i % 2, .quality = 0});
+        samples.push_back(TelemetrySample{.timestamp_ms = first + i,
+                                          .value = static_cast<double>(first + i),
+                                          .tag_id = 1 + i % 2,
+                                          .quality = 0});
     }
     return Serializer::serialize(samples);
 }
 
 std::vector<TelemetrySample> read_all(const fs::path& file, SegmentReadResult* result_out = nullptr) {
     std::vector<TelemetrySample> all;
-    auto result = read_segment(file, [&](std::span<const TelemetrySample> batch, const std::vector<TagInfo>&) {
-        all.insert(all.end(), batch.begin(), batch.end());
-    });
+    auto result =
+        read_segment(file, [&](std::span<const TelemetrySample> batch, const std::vector<TagInfo>&) {
+            all.insert(all.end(), batch.begin(), batch.end());
+        });
     if (result_out != nullptr) {
         *result_out = std::move(result);
     }
@@ -280,7 +292,8 @@ TEST_CASE("tags_from_devices numbers sensors across devices in config order", "[
     CHECK(tags[2].unit == "bar");
 }
 
-TEST_CASE("ReadingExporter writes every reading from many threads exactly once", "[ingest][exporter][concurrency]") {
+TEST_CASE("ReadingExporter writes every reading from many threads exactly once",
+          "[ingest][exporter][concurrency]") {
     TempDir dir;
     constexpr int kThreads = 4;
     constexpr int kPerThread = 5000;
@@ -294,7 +307,8 @@ TEST_CASE("ReadingExporter writes every reading from many threads exactly once",
                 const std::string sensor = t % 2 == 0 ? "winding_temp" : "vibration";
                 for (int i = 0; i < kPerThread; ++i) {
                     // Encode (thread, index) into the value so duplicates and gaps show up.
-                    while (!exporter.submit(sensor, t * 1'000'000.0 + i, start + std::chrono::milliseconds(i))) {
+                    while (
+                        !exporter.submit(sensor, t * 1'000'000.0 + i, start + std::chrono::milliseconds(i))) {
                         std::this_thread::yield();  // queue full: wait for the writer
                     }
                 }

@@ -128,7 +128,8 @@ struct SegmentReadResult {
 };
 
 /// Callback receiving one verified batch together with the segment's tag table.
-using BatchVisitor = std::function<void(std::span<const TelemetrySample> samples, const std::vector<TagInfo>& tags)>;
+using BatchVisitor =
+    std::function<void(std::span<const TelemetrySample> samples, const std::vector<TagInfo>& tags)>;
 
 /// Reads a segment, calling `on_batch` with the samples of every batch that
 /// passes its CRC check. Damaged batches are skipped (their length is known

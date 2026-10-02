@@ -63,8 +63,9 @@ TEST_CASE("Invalid export settings are rejected with the offending key", "[confi
                       ContainsSubstring("export.queue_capacity") && ContainsSubstring("power of two"));
     CHECK_THROWS_WITH(AppConfig::load_from_string(with_export(R"({"queue_capacity": 8})")),
                       ContainsSubstring("export.queue_capacity"));
-    CHECK_THROWS_WITH(AppConfig::load_from_string(with_export(R"({"queue_capacity": 1024, "batch_size": 2048})")),
-                      ContainsSubstring("export.batch_size"));
+    CHECK_THROWS_WITH(
+        AppConfig::load_from_string(with_export(R"({"queue_capacity": 1024, "batch_size": 2048})")),
+        ContainsSubstring("export.batch_size"));
     CHECK_THROWS_WITH(AppConfig::load_from_string(with_export(R"({"flush_interval_ms": 0})")),
                       ContainsSubstring("export.flush_interval_ms"));
     CHECK_THROWS_WITH(AppConfig::load_from_string(with_export(R"({"enabled": "yes"})")),

@@ -132,29 +132,31 @@ int dump(const std::vector<fs::path>& files, const std::string& sensor_filter) {
     std::cout << "timestamp,sensor_id,device_id,value,unit,quality\n";
     for (const auto& file : files) {
         std::map<std::uint32_t, const TagInfo*> by_id;
-        const auto result = read_segment(file, [&](std::span<const TelemetrySample> batch, const std::vector<TagInfo>& tags) {
-            if (by_id.empty()) {
-                for (const auto& tag : tags) {
-                    by_id[tag.id] = &tag;
+        const auto result =
+            read_segment(file, [&](std::span<const TelemetrySample> batch, const std::vector<TagInfo>& tags) {
+                if (by_id.empty()) {
+                    for (const auto& tag : tags) {
+                        by_id[tag.id] = &tag;
+                    }
                 }
-            }
-            for (const auto& sample : batch) {
-                const auto it = by_id.find(sample.tag_id);
-                const TagInfo* tag = it != by_id.end() ? it->second : nullptr;
-                const std::string sensor = tag != nullptr ? tag->sensor_id : "tag_" + std::to_string(sample.tag_id);
-                if (!sensor_filter.empty() && sensor != sensor_filter) {
-                    continue;
+                for (const auto& sample : batch) {
+                    const auto it = by_id.find(sample.tag_id);
+                    const TagInfo* tag = it != by_id.end() ? it->second : nullptr;
+                    const std::string sensor =
+                        tag != nullptr ? tag->sensor_id : "tag_" + std::to_string(sample.tag_id);
+                    if (!sensor_filter.empty() && sensor != sensor_filter) {
+                        continue;
+                    }
+                    // Shortest text that parses back to exactly the same double.
+                    char value[32];
+                    const auto [end, ec] = std::to_chars(value, value + sizeof(value), sample.value);
+                    *(ec == std::errc{} ? end : value) = '\0';
+                    std::cout << iso8601(sample.timestamp_ms) << ',' << csv(sensor) << ','
+                              << csv(tag != nullptr ? tag->device_id : "") << ',' << value << ','
+                              << csv(tag != nullptr ? tag->unit : "") << ','
+                              << static_cast<unsigned>(sample.quality) << '\n';
                 }
-                // Shortest text that parses back to exactly the same double.
-                char value[32];
-                const auto [end, ec] = std::to_chars(value, value + sizeof(value), sample.value);
-                *(ec == std::errc{} ? end : value) = '\0';
-                std::cout << iso8601(sample.timestamp_ms) << ',' << csv(sensor) << ','
-                          << csv(tag != nullptr ? tag->device_id : "") << ',' << value << ','
-                          << csv(tag != nullptr ? tag->unit : "") << ',' << static_cast<unsigned>(sample.quality)
-                          << '\n';
-            }
-        });
+            });
         if (!result.error.empty()) {
             std::cerr << file.string() << ": " << result.error << "\n";
             status = 1;

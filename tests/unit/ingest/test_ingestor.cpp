@@ -67,10 +67,13 @@ bool wait_until(Pred pred, std::chrono::milliseconds timeout = 2000ms) {
 TEST_CASE("Ingestor rejects invalid options", "[ingest][ingestor]") {
     auto sink = [](std::span<const std::uint8_t>) {};
     CHECK_THROWS_AS(Ingestor(IngestorOptions{.queue_capacity = 100}, sink), std::invalid_argument);
-    CHECK_THROWS_AS(Ingestor(IngestorOptions{.queue_capacity = 64, .batch_size = 0}, sink), std::invalid_argument);
-    CHECK_THROWS_AS(Ingestor(IngestorOptions{.queue_capacity = 64, .batch_size = 65}, sink), std::invalid_argument);
-    CHECK_THROWS_AS(Ingestor(IngestorOptions{.queue_capacity = 64, .batch_size = 8, .flush_interval = 0ms}, sink),
+    CHECK_THROWS_AS(Ingestor(IngestorOptions{.queue_capacity = 64, .batch_size = 0}, sink),
                     std::invalid_argument);
+    CHECK_THROWS_AS(Ingestor(IngestorOptions{.queue_capacity = 64, .batch_size = 65}, sink),
+                    std::invalid_argument);
+    CHECK_THROWS_AS(
+        Ingestor(IngestorOptions{.queue_capacity = 64, .batch_size = 8, .flush_interval = 0ms}, sink),
+        std::invalid_argument);
     CHECK_THROWS_AS(Ingestor(IngestorOptions{.queue_capacity = 64, .batch_size = 8}, nullptr),
                     std::invalid_argument);
 }
@@ -93,8 +96,7 @@ TEST_CASE("Ingestor sends a batch as soon as it is full", "[ingest][ingestor]") 
 
 TEST_CASE("Ingestor flushes a partial batch when the interval expires", "[ingest][ingestor]") {
     Collector collector;
-    Ingestor ingestor({.queue_capacity = 64, .batch_size = 32, .flush_interval = 20ms},
-                      collector.sink());
+    Ingestor ingestor({.queue_capacity = 64, .batch_size = 32, .flush_interval = 20ms}, collector.sink());
     ingestor.start();
     REQUIRE(ingestor.submit(sample(1)));
     REQUIRE(ingestor.submit(sample(2)));

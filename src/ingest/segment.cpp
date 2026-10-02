@@ -43,7 +43,8 @@ std::string segment_stem(std::int64_t created_ms, std::uint64_t sequence) {
 }
 
 bool ends_with(const std::string& text, const std::string& suffix) {
-    return text.size() >= suffix.size() && text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
+    return text.size() >= suffix.size() &&
+           text.compare(text.size() - suffix.size(), suffix.size(), suffix) == 0;
 }
 
 }  // namespace

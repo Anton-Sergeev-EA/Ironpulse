@@ -21,4 +21,6 @@ target_link_libraries(ironpulse_ingest
 # Command-line reader for export segments: verify, list tags, dump to CSV.
 add_executable(ironpulse-export export_tool.cpp)
 target_link_libraries(ironpulse-export PRIVATE ironpulse_options ironpulse::ingest)
+# Next to the ironpulse binary rather than deep in the build tree.
+set_target_properties(ironpulse-export PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}")
 install(TARGETS ironpulse-export RUNTIME DESTINATION bin)

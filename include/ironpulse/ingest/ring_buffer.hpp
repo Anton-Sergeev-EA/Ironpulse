@@ -42,7 +42,8 @@ public:
         if (capacity < 2 || (capacity & (capacity - 1)) != 0) {
             throw std::invalid_argument("SpscRingBuffer capacity must be a power of two and at least 2");
         }
-        buffer_ = static_cast<Slot*>(::operator new[](sizeof(Slot) * capacity_, std::align_val_t{alignof(Slot)}));
+        buffer_ =
+            static_cast<Slot*>(::operator new[](sizeof(Slot) * capacity_, std::align_val_t{alignof(Slot)}));
     }
 
     ~SpscRingBuffer() {
