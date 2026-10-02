@@ -1,20 +1,21 @@
 #include "ironpulse/ingest/ingestor.hpp"
 
-#include <chrono>
-#include <iostream>
-#include <span>
-#include <thread>
+#include <exception>
+#include <stdexcept>
 #include <utility>
 
+#include "ironpulse/core/logger.hpp"
+
 #if defined(__x86_64__) || defined(_M_X64)
-#include <immintrin.h>  // For _mm_pause()
+#include <immintrin.h>  // _mm_pause
 #endif
 
 namespace ironpulse::ingest {
 
 namespace {
 
-// Spin-wait helper to minimize CPU latency without burning power aggressively.
+/// Tells the core we are spinning, so a hyper-threaded sibling gets the
+/// execution resources and the spin itself burns less power.
 inline void cpu_relax() noexcept {
 #if defined(__x86_64__) || defined(_M_X64)
     _mm_pause();
@@ -25,11 +26,41 @@ inline void cpu_relax() noexcept {
 #endif
 }
 
+/// Escalating back-off for an idle consumer: spin briefly (a sample may be
+/// microseconds away under load), then yield, then sleep. Sleeping 1 ms at
+/// most keeps an idle engine near 0% CPU while a burst still has to fill
+/// the whole queue within that millisecond to cause a drop.
+void back_off(unsigned idle_rounds) noexcept {
+    constexpr unsigned kSpinRounds = 64;
+    constexpr unsigned kYieldRounds = 128;
+    if (idle_rounds < kSpinRounds) {
+        cpu_relax();
+    } else if (idle_rounds < kYieldRounds) {
+        std::this_thread::yield();
+    } else {
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+void validate(const IngestorOptions& options) {
+    const auto capacity = options.queue_capacity;
+    if (capacity < 2 || (capacity & (capacity - 1)) != 0) {
+        throw std::invalid_argument("ingest: queue_capacity must be a power of two and at least 2");
+    }
+    if (options.batch_size == 0 || options.batch_size > capacity) {
+        throw std::invalid_argument("ingest: batch_size must be between 1 and queue_capacity");
+    }
+    if (options.flush_interval.count() <= 0) {
+        throw std::invalid_argument("ingest: flush_interval must be positive");
+    }
+}
+
 }  // namespace
 
-Ingestor::Ingestor(const Config& config) : m_config(config) {
-    if (auto err = m_config.validate()) {
-        std::cerr << "[Ingestor] Warning: Invalid config parameters: " << *err << std::endl;
+Ingestor::Ingestor(IngestorOptions options, BatchSink sink)
+    : options_((validate(options), options)), sink_(std::move(sink)), queue_(options_.queue_capacity) {
+    if (!sink_) {
+        throw std::invalid_argument("ingest: a batch sink is required");
     }
 }
 
@@ -38,119 +69,97 @@ Ingestor::~Ingestor() {
 }
 
 void Ingestor::start() {
-    if (m_running.exchange(true, std::memory_order_acq_rel)) {
-        return;  // Already running.
+    if (running_.exchange(true, std::memory_order_acq_rel)) {
+        return;
     }
-
-    // Launch single consumer background jthread (C++20 auto-join thread).
-    m_consumer_thread = std::jthread([this]() { consumer_loop(); });
-
-    std::cout << "[Ingestor] Engine started gracefully." << " Buffer Capacity: " << m_config.ring_buffer_capacity
-              << " | Batch Size: " << m_config.batch_size << " | Flush Interval: " << m_config.flush_interval.count()
-              << "ms" << std::endl;
+    consumer_ = std::jthread([this](const std::stop_token& stop) { consumer_loop(stop); });
 }
 
 void Ingestor::stop() noexcept {
-    if (!m_running.exchange(false, std::memory_order_acq_rel)) {
-        return;  // Already stopped.
-    }
-
-    if (m_consumer_thread.joinable()) {
-        m_consumer_thread.join();
-    }
-
-    const auto stats = m_metrics.snapshot();
-    std::cout << "[Ingestor] Stopped." << " Ingested: " << stats.ingested << " | Dropped: " << stats.dropped
-              << " | Batches: " << stats.batches_sent << std::endl;
-}
-
-void Ingestor::set_batch_callback(BatchCallback callback) {
-    m_callback = std::move(callback);
-}
-
-bool Ingestor::ingest_sample(const TelemetrySample& sample) noexcept {
-    if (m_ring_buffer.push(sample)) {
-        m_metrics.record_ingested();
-        return true;
-    }
-    m_metrics.record_dropped();
-    return false;
-}
-
-bool Ingestor::ingest_sample(TelemetrySample&& sample) noexcept {
-    if (m_ring_buffer.push(std::move(sample))) {
-        m_metrics.record_ingested();
-        return true;
-    }
-    m_metrics.record_dropped();
-    return false;
-}
-
-void Ingestor::process_batch(std::vector<TelemetrySample>& batch_scratchpad,
-                             std::vector<uint8_t>& serialization_buffer) {
-    if (batch_scratchpad.empty()) {
+    if (!running_.exchange(false, std::memory_order_acq_rel)) {
         return;
     }
-
-    const std::size_t required_bytes = Serializer::required_buffer_size(batch_scratchpad.size());
-    if (serialization_buffer.size() < required_bytes) {
-        serialization_buffer.resize(required_bytes);
+    consumer_.request_stop();
+    if (consumer_.joinable()) {
+        consumer_.join();
     }
-
-    const std::size_t bytes_written = Serializer::serialize(batch_scratchpad, serialization_buffer);
-
-    if (bytes_written > 0 && m_callback) {
-        // Pass non-owning view std::span to eliminate copy overhead.
-        m_callback(std::span<const uint8_t>(serialization_buffer.data(), bytes_written));
-        m_metrics.record_batch_sent();
-    }
-
-    batch_scratchpad.clear();
 }
 
-void Ingestor::consumer_loop() {
-    // Pre-allocate scratchpad vectors outside hot path loop to achieve zero dynamic allocations.
-    std::vector<TelemetrySample> batch_scratchpad;
-    batch_scratchpad.reserve(m_config.batch_size);
+bool Ingestor::submit(const TelemetrySample& sample) noexcept {
+    if (queue_.push(sample)) {
+        counters_.record_ingested();
+        return true;
+    }
+    counters_.record_dropped();
+    return false;
+}
 
-    std::vector<uint8_t> serialization_buffer;
-    serialization_buffer.resize(Serializer::required_buffer_size(m_config.batch_size));
+void Ingestor::send_batch(std::vector<TelemetrySample>& batch, std::vector<std::uint8_t>& encoded) noexcept {
+    const std::size_t bytes = Serializer::serialize(batch, encoded);
+    batch.clear();
+    try {
+        sink_(std::span<const std::uint8_t>(encoded.data(), bytes));
+        counters_.record_batch_sent();
+    } catch (const std::exception& e) {
+        counters_.record_batch_failed();
+        IP_LOG_ERROR("ingest: batch sink failed: {}", e.what());
+    } catch (...) {
+        counters_.record_batch_failed();
+        IP_LOG_ERROR("ingest: batch sink failed with an unknown exception");
+    }
+}
 
-    auto last_flush_time = std::chrono::steady_clock::now();
-    uint32_t idle_spin_count = 0;
+void Ingestor::consumer_loop(const std::stop_token& stop) {
+    // Both buffers are sized once, up front, for the largest possible batch,
+    // so the steady-state loop never allocates.
+    std::vector<TelemetrySample> batch;
+    batch.reserve(options_.batch_size);
+    std::vector<std::uint8_t> encoded(Serializer::required_buffer_size(options_.batch_size));
 
-    while (m_running.load(std::memory_order_relaxed) || !m_ring_buffer.empty()) {
-        TelemetrySample sample;
+    auto last_flush = std::chrono::steady_clock::now();
+    unsigned idle_rounds = 0;
 
-        // Drain elements from ring buffer into batch scratchpad.
-        while (batch_scratchpad.size() < m_config.batch_size && m_ring_buffer.pop(sample)) {
-            batch_scratchpad.push_back(sample);
+    while (true) {
+        // Read the stop flag *before* draining: everything the producer
+        // queued before stop() was called is then guaranteed to be seen by
+        // the drain below, and the final "queue empty" check is exact.
+        const bool stopping = stop.stop_requested();
+
+        std::size_t popped = 0;
+        TelemetrySample sample{};
+        while (batch.size() < options_.batch_size && queue_.pop(sample)) {
+            batch.push_back(sample);
+            ++popped;
         }
 
         const auto now = std::chrono::steady_clock::now();
-        const bool timeout_reached = (now - last_flush_time) >= m_config.flush_interval;
-
-        // Flush condition: full batch OR timer threshold reached.
-        if (!batch_scratchpad.empty() && (batch_scratchpad.size() >= m_config.batch_size || timeout_reached)) {
-            process_batch(batch_scratchpad, serialization_buffer);
-            last_flush_time = now;
-            idle_spin_count = 0;
+        const bool full = batch.size() >= options_.batch_size;
+        const bool due = !batch.empty() && now - last_flush >= options_.flush_interval;
+        if (full || due) {
+            send_batch(batch, encoded);
+            last_flush = now;
+            idle_rounds = 0;
             continue;
         }
 
-        // Low-latency backoff mechanism when no items were processed.
-        if (batch_scratchpad.empty()) {
-            if (++idle_spin_count < 1000) {
-                cpu_relax();  // Low-latency CPU pause instruction.
-            } else {
-                std::this_thread::sleep_for(std::chrono::microseconds(100));  // Yield after prolonged idle
+        if (stopping) {
+            if (queue_.empty()) {
+                if (!batch.empty()) {
+                    send_batch(batch, encoded);
+                }
+                return;
             }
+            continue;  // keep draining
         }
-    }
 
-    // Drain remaining buffered samples prior to shutdown.
-    if (!batch_scratchpad.empty()) {
-        process_batch(batch_scratchpad, serialization_buffer);
+        if (popped == 0) {
+            back_off(idle_rounds);
+            if (idle_rounds < 1024) {  // saturate instead of wrapping back to spinning
+                ++idle_rounds;
+            }
+        } else {
+            idle_rounds = 0;
+        }
     }
 }
 

@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <memory>
 #include <new>
+#include <stdexcept>
 #include <type_traits>
 #include <utility>
 
@@ -11,157 +12,141 @@
 
 namespace ironpulse::ingest {
 
-/**
- * @brief High-Performance, Lock-Free Single-Producer Single-Consumer (SPSC) Ring Buffer.
- *
- * Optimized for ultra-low latency scenarios using cache-line alignment to prevent false sharing
- * and local index caching to minimize cross-core bus traffic.
- *
- * @tparam T Element type stored in the buffer.
- * @tparam Capacity Buffer size (MUST be a power of two).
- */
-template <typename T, std::size_t Capacity = 1024 * 1024>
-class RingBuffer {
-    static_assert((Capacity & (Capacity - 1)) == 0, "Capacity must be a power of two");
-    static_assert(Capacity >= 2, "Capacity must be at least 2");
-
-  public:
+/// Lock-free single-producer / single-consumer ring buffer.
+///
+/// Exactly one thread may call `push`/`emplace` and exactly one (other)
+/// thread may call `pop` at any time. Callers with several producers must
+/// serialise them themselves — see ReadingExporter, which does so with a
+/// short critical section in front of the buffer.
+///
+/// Design notes:
+/// - head and tail live on separate cache lines, so the producer and the
+///   consumer never invalidate each other's line on every operation;
+/// - each side keeps a cached copy of the other side's index and only
+///   reloads it (an acquire load of a line owned by the other core) when
+///   the cached value says the buffer looks full or empty;
+/// - indices grow monotonically and are masked on access, so `tail - head`
+///   is the size without a separate "wrapped" flag;
+/// - elements are constructed in place in raw storage, so T need not be
+///   default-constructible and move-only types work.
+///
+/// The capacity is chosen at run time (it comes from configuration) and
+/// must be a power of two so that masking replaces a modulo.
+template <typename T>
+class SpscRingBuffer {
+public:
     using value_type = T;
     using size_type = std::size_t;
 
-    RingBuffer() : m_buffer(static_cast<Storage*>(::operator new[](sizeof(Storage) * Capacity))) {
-        // Initialize atomic counters.
-        m_head.store(0, std::memory_order_relaxed);
-        m_tail.store(0, std::memory_order_relaxed);
-        m_head_cached = 0;
-        m_tail_cached = 0;
+    explicit SpscRingBuffer(size_type capacity) : capacity_(capacity), mask_(capacity - 1) {
+        if (capacity < 2 || (capacity & (capacity - 1)) != 0) {
+            throw std::invalid_argument("SpscRingBuffer capacity must be a power of two and at least 2");
+        }
+        buffer_ = static_cast<Slot*>(::operator new[](sizeof(Slot) * capacity_, std::align_val_t{alignof(Slot)}));
     }
 
-    ~RingBuffer() {
-        // Destroy all remaining unconsumed elements in place. This is intentionally
-        // NOT implemented as "T dummy; while (pop(dummy)) {}" - that would require T
-        // to be default-constructible, which contradicts this container's own
-        // stated support for move-only types (see MoveOnlySemanticsAndEmplace in
-        // tests/test_ring_buffer.cpp, which has no default constructor at all).
-        // By the time the destructor runs there is no concurrent producer/consumer
-        // access, so plain relaxed loads of the indices are safe here.
+    ~SpscRingBuffer() {
+        // Destroy unconsumed elements in place. Not written as
+        // "T dummy; while (pop(dummy)) {}", which would require T to be
+        // default-constructible. No producer or consumer can be running by
+        // the time the destructor is called, so relaxed loads suffice.
         if constexpr (!std::is_trivially_destructible_v<T>) {
-            size_type head = m_head.load(std::memory_order_relaxed);
-            const size_type tail = m_tail.load(std::memory_order_relaxed);
-            while (head != tail) {
-                std::destroy_at(std::launder(reinterpret_cast<T*>(std::addressof(m_buffer[head & kMask].storage))));
-                ++head;
+            size_type head = head_.load(std::memory_order_relaxed);
+            const size_type tail = tail_.load(std::memory_order_relaxed);
+            for (; head != tail; ++head) {
+                std::destroy_at(slot(head));
             }
         }
-
-        // Free dynamically allocated raw memory block.
-        ::operator delete[](m_buffer);
+        ::operator delete[](buffer_, std::align_val_t{alignof(Slot)});
     }
 
-    // Disable copy and assignment to preserve SPSC semantics and internal state integrity.
-    RingBuffer(const RingBuffer&) = delete;
-    RingBuffer& operator=(const RingBuffer&) = delete;
-    RingBuffer(RingBuffer&&) = delete;
-    RingBuffer& operator=(RingBuffer&&) = delete;
+    SpscRingBuffer(const SpscRingBuffer&) = delete;
+    SpscRingBuffer& operator=(const SpscRingBuffer&) = delete;
+    SpscRingBuffer(SpscRingBuffer&&) = delete;
+    SpscRingBuffer& operator=(SpscRingBuffer&&) = delete;
 
-    /**
-     * @brief Constructs an element in-place at the end of the buffer (Producer thread only).
-     * @tparam Args Argument types for T constructor.
-     * @param args Arguments forwarded to construct T.
-     * @return true if successful, false if the buffer is full.
-     */
+    /// Constructs an element in place at the tail (producer thread only).
+    /// Returns false, leaving the buffer unchanged, when it is full.
     template <typename... Args>
     bool emplace(Args&&... args) noexcept(std::is_nothrow_constructible_v<T, Args...>) {
-        const size_type current_tail = m_tail.load(std::memory_order_relaxed);
-
-        // Optimization: Check cached head first to avoid costly cross-core atomic acquire load.
-        if ((current_tail - m_head_cached) >= Capacity) {
-            m_head_cached = m_head.load(std::memory_order_acquire);
-            if ((current_tail - m_head_cached) >= Capacity) {
-                return false;  // Buffer is full
+        const size_type tail = tail_.load(std::memory_order_relaxed);
+        if (tail - head_cached_ >= capacity_) {
+            head_cached_ = head_.load(std::memory_order_acquire);
+            if (tail - head_cached_ >= capacity_) {
+                return false;
             }
         }
-
-        // Construct object directly in allocated uninitialized memory block.
-        new (std::addressof(m_buffer[current_tail & kMask].storage)) T(std::forward<Args>(args)...);
-
-        // Release order guarantees consumer sees initialized memory after tail update.
-        m_tail.store(current_tail + 1, std::memory_order_release);
+        ::new (static_cast<void*>(buffer_ + (tail & mask_))) T(std::forward<Args>(args)...);
+        // Release: the consumer must see the constructed element before the new tail.
+        tail_.store(tail + 1, std::memory_order_release);
         return true;
     }
 
-    /**
-     * @brief Pushes item into the buffer via move/copy (Producer thread only).
-     */
-    bool push(T&& item) noexcept(std::is_nothrow_move_constructible_v<T>) { return emplace(std::move(item)); }
+    bool push(T&& item) noexcept(std::is_nothrow_move_constructible_v<T>) {
+        return emplace(std::move(item));
+    }
 
-    bool push(const T& item) { return emplace(item); }
+    bool push(const T& item) noexcept(std::is_nothrow_copy_constructible_v<T>) {
+        return emplace(item);
+    }
 
-    /**
-     * @brief Pops an element from the buffer (Consumer thread only).
-     * @param value Output parameter where extracted element is moved.
-     * @return true if an element was extracted, false if buffer is empty.
-     */
-    bool pop(T& value) noexcept(std::is_nothrow_move_assignable_v<T>) {
-        const size_type current_head = m_head.load(std::memory_order_relaxed);
-
-        // Optimization: Check cached tail first to prevent acquire loads on every pop call.
-        if (current_head == m_tail_cached) {
-            m_tail_cached = m_tail.load(std::memory_order_acquire);
-            if (current_head == m_tail_cached) {
-                return false;  // Buffer is empty.
+    /// Moves the oldest element into `out` (consumer thread only).
+    /// Returns false when the buffer is empty.
+    bool pop(T& out) noexcept(std::is_nothrow_move_assignable_v<T>) {
+        const size_type head = head_.load(std::memory_order_relaxed);
+        if (head == tail_cached_) {
+            tail_cached_ = tail_.load(std::memory_order_acquire);
+            if (head == tail_cached_) {
+                return false;
             }
         }
-
-        auto* ptr = std::launder(reinterpret_cast<T*>(std::addressof(m_buffer[current_head & kMask].storage)));
-        value = std::move(*ptr);
-        ptr->~T();  // Explicitly destroy the element.
-
-        // Release order guarantees producer sees free slot after head update.
-        m_head.store(current_head + 1, std::memory_order_release);
+        T* element = slot(head);
+        out = std::move(*element);
+        std::destroy_at(element);
+        // Release: the producer must not reuse the slot before it is vacated.
+        head_.store(head + 1, std::memory_order_release);
         return true;
     }
 
-    /**
-     * @brief Estimates current number of items in the ring buffer.
-     * @note Lock-free state snapshot; exact value may fluctuate concurrently.
-     */
+    /// Approximate number of queued elements; exact only when neither side
+    /// is running concurrently.
     [[nodiscard]] size_type size() const noexcept {
-        // Indices only ever increase (they wrap via unsigned overflow, never via a
-        // modulo reset), so tail is always >= head from a single consistent
-        // snapshot; no separate "wrap-around" branch is needed or correct here.
-        const size_type head = m_head.load(std::memory_order_relaxed);
-        const size_type tail = m_tail.load(std::memory_order_relaxed);
+        const size_type head = head_.load(std::memory_order_acquire);
+        const size_type tail = tail_.load(std::memory_order_acquire);
         return tail - head;
     }
 
     [[nodiscard]] bool empty() const noexcept {
-        return m_head.load(std::memory_order_relaxed) == m_tail.load(std::memory_order_relaxed);
+        return size() == 0;
     }
 
-    [[nodiscard]] constexpr size_type capacity() const noexcept { return Capacity; }
+    [[nodiscard]] size_type capacity() const noexcept {
+        return capacity_;
+    }
 
-  private:
-    static constexpr size_type kMask = Capacity - 1;
-
-    // Properly aligned uninitialized storage wrapper.
-    struct alignas(alignof(T)) Storage {
-        std::byte storage[sizeof(T)];
+private:
+    struct Slot {
+        alignas(T) std::byte bytes[sizeof(T)];
     };
 
-    // Pointer to heap-allocated raw memory buffer.
-    Storage* const m_buffer;
+    [[nodiscard]] T* slot(size_type index) noexcept {
+        return std::launder(reinterpret_cast<T*>(buffer_[index & mask_].bytes));
+    }
 
-    // PRODUCER STATE (Written by Producer).
-    alignas(kCacheLineSize) std::atomic<size_type> m_tail;
-    size_type m_head_cached{0};  // Read-only copy of head maintained by Producer
+    const size_type capacity_;
+    const size_type mask_;
+    Slot* buffer_ = nullptr;
 
-    // CONSUMER STATE (Written by Consumer).
-    alignas(kCacheLineSize) std::atomic<size_type> m_head;
-    size_type m_tail_cached{0};  // Read-only copy of tail maintained by Consumer.
+    // Producer-owned line: the tail it publishes and its cached view of head.
+    alignas(kCacheLineSize) std::atomic<size_type> tail_{0};
+    size_type head_cached_ = 0;
 
-    // Padding to ensure no trailing variables leak into the last cache line.
-    alignas(kCacheLineSize) char m_padding[1];
+    // Consumer-owned line: the head it publishes and its cached view of tail.
+    alignas(kCacheLineSize) std::atomic<size_type> head_{0};
+    size_type tail_cached_ = 0;
+
+    // Keeps whatever follows this object off the consumer's line.
+    alignas(kCacheLineSize) std::byte padding_[1]{};
 };
 
 }  // namespace ironpulse::ingest

@@ -2,97 +2,90 @@
 
 #include <atomic>
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
-#include <memory>
 #include <span>
 #include <thread>
 #include <vector>
 
-#include "config.hpp"
-#include "metrics.hpp"
-#include "ring_buffer.hpp"
-#include "serializer.hpp"
+#include "ironpulse/ingest/metrics.hpp"
+#include "ironpulse/ingest/ring_buffer.hpp"
+#include "ironpulse/ingest/serializer.hpp"
 
 namespace ironpulse::ingest {
 
-/**
- * @brief High-Performance Telemetry Ingestion Orchestrator.
- *
- * Coordinates ingestion loops, batch serialization, thread lifecycles, and metric tracking.
- */
-class Ingestor {
-  public:
-    /**
-     * @brief Zero-copy callback view receiving serialized telemetry bytes.
-     */
-    using BatchCallback = std::function<void(std::span<const uint8_t> batch_data)>;
+struct IngestorOptions {
+    /// Queue length in samples; a power of two. Samples arriving while the
+    /// queue is full are dropped and counted, never blocking the producer.
+    std::size_t queue_capacity = 65536;
+    /// A batch is sent as soon as it holds this many samples...
+    std::size_t batch_size = 1000;
+    /// ...or when this long has passed since the last one, whichever is first.
+    std::chrono::milliseconds flush_interval{1000};
+};
 
-    explicit Ingestor(const Config& config);
+/// Moves samples from a producer thread to a sink without ever blocking
+/// the producer: the producer enqueues into a lock-free SPSC queue; a
+/// dedicated consumer thread drains it, groups samples into batches,
+/// encodes each batch with Serializer into a reusable buffer and hands the
+/// bytes to the sink. After warm-up the consumer allocates nothing.
+///
+/// Single producer: `submit` must not be called from two threads at once.
+/// The sink runs on the consumer thread; if it throws, the batch is
+/// counted as failed and the consumer carries on with the next one.
+class Ingestor {
+public:
+    using BatchSink = std::function<void(std::span<const std::uint8_t> batch)>;
+
+    /// Throws std::invalid_argument for invalid options.
+    Ingestor(IngestorOptions options, BatchSink sink);
     ~Ingestor();
 
-    // Prevent copying and moving to guarantee thread-safe address stability
     Ingestor(const Ingestor&) = delete;
     Ingestor& operator=(const Ingestor&) = delete;
     Ingestor(Ingestor&&) = delete;
     Ingestor& operator=(Ingestor&&) = delete;
 
-    /**
-     * @brief Starts consumer background worker processing threads.
-     */
+    /// Starts the consumer thread. Idempotent.
     void start();
 
-    /**
-     * @brief Gracefully halts ingestion workers and flushes remaining buffered metrics.
-     */
+    /// Stops accepting work, drains everything already queued to the sink
+    /// and joins the consumer thread. Idempotent. The producer must have
+    /// stopped calling submit() before this is called.
     void stop() noexcept;
 
-    /**
-     * @brief Registers consumer callback function for processing completed batches.
-     */
-    void set_batch_callback(BatchCallback callback);
+    /// Enqueues one sample (producer thread only). Returns false, counting
+    /// a drop, when the queue is full.
+    bool submit(const TelemetrySample& sample) noexcept;
 
-    /**
-     * @brief Ingests a single telemetry sample into the pipeline (Producer side).
-     * @return true if successfully queued into ring buffer; false if buffer overflow occurred.
-     */
-    bool ingest_sample(TelemetrySample&& sample) noexcept;
-    bool ingest_sample(const TelemetrySample& sample) noexcept;
-
-    /**
-     * @brief Constructs and enqueues sample in-place without intermediate copies.
-     */
-    template <typename... Args>
-    bool emplace_sample(Args&&... args) noexcept {
-        if (m_ring_buffer.emplace(std::forward<Args>(args)...)) {
-            m_metrics.record_ingested();
-            return true;
-        }
-        m_metrics.record_dropped();
-        return false;
+    [[nodiscard]] CountersSnapshot counters() const noexcept {
+        return counters_.snapshot();
     }
 
-    /**
-     * @brief Returns an atomic point-in-time snapshot of processing metrics.
-     */
-    [[nodiscard]] MetricsSnapshot get_metrics() const noexcept { return m_metrics.snapshot(); }
+    /// Samples currently waiting in the queue (approximate while running).
+    [[nodiscard]] std::size_t queue_depth() const noexcept {
+        return queue_.size();
+    }
 
-    /**
-     * @brief Checks whether the ingestor pipeline worker is currently running.
-     */
-    [[nodiscard]] bool is_running() const noexcept { return m_running.load(std::memory_order_relaxed); }
+    [[nodiscard]] bool running() const noexcept {
+        return running_.load(std::memory_order_acquire);
+    }
 
-  private:
-    void consumer_loop();
-    void process_batch(std::vector<TelemetrySample>& batch_scratchpad, std::vector<uint8_t>& serialization_buffer);
+    [[nodiscard]] const IngestorOptions& options() const noexcept {
+        return options_;
+    }
 
-    Config m_config;
-    RingBuffer<TelemetrySample> m_ring_buffer;
-    Metrics m_metrics;
-    BatchCallback m_callback;
+private:
+    void consumer_loop(const std::stop_token& stop);
+    void send_batch(std::vector<TelemetrySample>& batch, std::vector<std::uint8_t>& encoded) noexcept;
 
-    std::atomic<bool> m_running{false};
-    std::jthread m_consumer_thread;
+    IngestorOptions options_;
+    BatchSink sink_;
+    SpscRingBuffer<TelemetrySample> queue_;
+    Counters counters_;
+    std::atomic<bool> running_{false};
+    std::jthread consumer_;
 };
 
 }  // namespace ironpulse::ingest
