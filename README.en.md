@@ -1,15 +1,81 @@
-# Ironpulse.
+# Ironpulse
 
-**Real-time industrial monitoring that watches your equipment's sensors and tells you when something is going wrong — before it breaks.**
+**Industrial edge monitoring and anomaly-detection platform for Modbus TCP equipment, built in C++20.**
 
-[![CI](https://img.shields.io/badge/CI-GitHub_Actions-2088FF?logo=githubactions&logoColor=white)](.github/workflows/ci.yml)
-[![C++](https://img.shields.io/badge/C%2B%2B-20-00599C?logo=cplusplus&logoColor=white)](CMakeLists.txt)
-[![Docker](https://img.shields.io/badge/Docker-amd64%20%7C%20arm64-2496ED?logo=docker&logoColor=white)](deploy/docker)
-[![Languages](https://img.shields.io/badge/UI-8%20languages-8A2BE2)](#interface-languages)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-137%20passing-brightgreen)](tests)
+Ironpulse acquires real-time telemetry from industrial devices, decodes register maps, persists sensor history, detects hard-limit and statistical anomalies, and exposes operational state through REST, WebSocket, Prometheus metrics, and a live dashboard.
 
-[Русский](README.md) · **English** · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
+> **Engineering focus:** deterministic industrial telemetry, failure handling, concurrency, observability, and deployability — not a notebook-only ML demo.
+
+## Why this project matters
+
+Ironpulse demonstrates the software layer behind industrial monitoring and predictive-maintenance systems: asynchronous field-device communication, bounded failure modes, signal analytics, persistence, alerting, APIs, observability, and containerized edge deployment.
+
+### Engineering evidence
+
+- **C++20 / standalone Asio** with per-client strands and bounded network deadlines.
+- **Modbus TCP** polling with batched register reads, transaction-ID validation, reconnect/recovery, 16/32-bit and float decoding, word-order handling, scale/offset conversion.
+- **Detection pipeline:** hard limits plus statistical detectors including EWMA and two-sided CUSUM, combined by the rule engine.
+- **Failure isolation:** slow/unreachable devices do not block other polling loops; missed polling ticks are skipped instead of replayed in bursts.
+- **Persistence & export:** in-memory series, WAL-backed history, retention, and an optional SPSC export pipeline with CRC-32C segments.
+- **Operational interfaces:** REST, WebSocket, Prometheus metrics, dashboard, Telegram/Slack/webhook notifications.
+- **Verification:** unit and end-to-end integration tests, GCC + Clang builds, ASan/UBSan, ThreadSanitizer, formatting checks, Docker build and full-stack smoke test in CI.
+- **Deployment:** multi-stage non-root Docker image, amd64/arm64 release path, health checks, systemd/nginx deployment assets.
+- **Architecture documentation:** ADRs, OpenAPI specification, explicit failure-handling and concurrency model.
+
+## Architecture at a glance
+
+```text
+Industrial equipment / PLCs
+          │
+          │ Modbus TCP
+          ▼
+┌─────────────────────────┐
+│ Async C++20 acquisition │
+│ pollers · decoder       │
+└────────────┬────────────┘
+             │ SensorReadingEvent
+      ┌──────┼───────────────┐
+      ▼      ▼               ▼
+  Storage  Analytics      Export pipeline
+  + WAL    limits +       SPSC → segments
+           EWMA/CUSUM
+      │      │
+      └──┬───┘
+         ▼
+ Alerts / Metrics / Notifications
+         │
+         ▼
+ REST · WebSocket · Prometheus · Dashboard
+```
+
+See [Architecture](docs/architecture.md), [OpenAPI](docs/openapi.yaml), and the [ADRs](docs/adr/) for design rationale and trade-offs.
+
+## Reliability and failure behaviour
+
+The project deliberately treats communication failures as normal operating conditions. Connect and request operations are deadline-bounded; malformed or out-of-sequence Modbus responses reset the stream; unreachable devices are marked offline and retried on the next cycle; a reachable device returning a Modbus exception remains online so configuration faults are distinguishable from communication loss. The integration suite exercises telemetry flow, alarm generation, timeout/offline detection, and recovery against a real TCP fake device.
+
+## Performance claims
+
+Microbenchmarks live in [tests/benchmarks](tests/benchmarks). Any throughput or latency numbers in the documentation are **measurements for a stated build and machine, not universal product guarantees**. The benchmark source is included so results can be reproduced on other hardware.
+
+## Scope and known limitations
+
+This repository is an engineering portfolio/reference implementation, not a certified safety system or a drop-in replacement for a commercial SCADA platform. Current limitations include Modbus TCP-only field acquisition (RTU requires a gateway), a shared API token rather than RBAC, no operator alarm acknowledgement workflow, and JSON-based configuration. See [Architecture — Known limitations](docs/architecture.md#known-limitations).
+
+## Quick start
+
+```bash
+git clone https://github.com/Anton-Sergeev-EA/Ironpulse.git
+cd Ironpulse/deploy/docker
+cp .env.example .env
+docker compose up --build
+```
+
+Then open the dashboard/API exposed by the Compose configuration. The included simulator produces industrial-style telemetry so the complete acquisition → analytics → API path can be evaluated without physical PLC hardware.
+
+---
+
+**Other languages:** [Русский](README.md) · [中文](README.zh.md) · [हिन्दी](README.hi.md) · [Español](README.es.md) · [Français](README.fr.md) · [Deutsch](README.de.md) · [Italiano](README.it.md)
 
 ## What is it?
 Picture a plant with dozens of sensors: transformer winding temperature, motor bearing vibration, pump pressure. Today someone has to notice it on a screen — or worse, hear a loud noise — before realising a part is overheating or about to fail.
