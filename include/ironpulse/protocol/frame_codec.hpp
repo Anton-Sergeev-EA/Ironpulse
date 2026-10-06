@@ -40,7 +40,8 @@ std::vector<std::uint8_t> encode_request(const ModbusRequest& request);
 std::optional<ModbusResponse> decode_response(const std::vector<std::uint8_t>& buffer);
 
 /// Returns the expected total frame length (MBAP header + PDU) once the
-/// 7-byte MBAP header has been read, or std::nullopt if not enough bytes yet.
+/// 7-byte MBAP header has been read; returns std::nullopt for an incomplete
+/// header, non-Modbus protocol id or out-of-range length.
 std::optional<std::size_t> expected_frame_length(const std::vector<std::uint8_t>& header_bytes);
 
 }  // namespace ironpulse::protocol
